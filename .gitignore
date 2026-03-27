@@ -1,0 +1,9 @@
+node_modules/
+.next/
+data/
+uploads/files/*
+uploads/thumbnails/*
+!uploads/files/.gitkeep
+!uploads/thumbnails/.gitkeep
+.env
+.env.local

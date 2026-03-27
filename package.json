@@ -1,0 +1,51 @@
+{
+  "name": "design-asset-library",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:lan": "next dev --hostname 0.0.0.0 --port 3000",
+    "build": "next build",
+    "start": "next start",
+    "start:lan": "next start --hostname 0.0.0.0 --port 3000",
+    "db:init": "tsx src/lib/init-db.ts",
+    "user:add": "tsx src/lib/add-user.ts"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.0",
+    "@radix-ui/react-dropdown-menu": "^2.1.0",
+    "@radix-ui/react-label": "^2.1.0",
+    "@radix-ui/react-select": "^2.1.0",
+    "@radix-ui/react-slot": "^1.1.0",
+    "@radix-ui/react-switch": "^1.1.0",
+    "@radix-ui/react-toast": "^1.2.0",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.0.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^0.400.0",
+    "multer": "^1.4.5-lts.1",
+    "next": "^14.2.0",
+    "node-vibrant": "^4.0.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sharp": "^0.34.5",
+    "tailwind-merge": "^2.3.0",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "tsx": "^4.15.0",
+    "typescript": "^5.5.0"
+  }
+}
