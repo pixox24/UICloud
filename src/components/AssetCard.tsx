@@ -1,5 +1,6 @@
 "use client";
 
+import { Star } from "lucide-react";
 import { Download, Eye, FileText } from "lucide-react";
 import { getPreferredThumbnailPath } from "@/lib/asset-options";
 import { formatFileSize } from "@/lib/utils";
@@ -8,9 +9,11 @@ import type { Asset } from "@/types";
 interface AssetCardProps {
   asset: Asset;
   onSelect: (asset: Asset) => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: (assetId: number) => void;
 }
 
-export default function AssetCard({ asset, onSelect }: AssetCardProps) {
+export default function AssetCard({ asset, onSelect, isFavorite, onToggleFavorite }: AssetCardProps) {
   const thumbnail = getPreferredThumbnailPath(asset);
 
   const handleDownload = (event: React.MouseEvent) => {
@@ -18,32 +21,54 @@ export default function AssetCard({ asset, onSelect }: AssetCardProps) {
     window.location.href = `/api/download/${asset.id}`;
   };
 
+  const handleFavorite = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (onToggleFavorite) {
+      onToggleFavorite(asset.id);
+    }
+  };
+
   return (
     <div
       onClick={() => onSelect(asset)}
       className="group relative cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-all duration-300 hover:scale-[1.02] hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5"
     >
-      <div className="aspect-[4/3] overflow-hidden bg-secondary">
+      <div className="overflow-hidden bg-secondary">
         {thumbnail ? (
           <img
             src={`/${thumbnail}`}
             alt={asset.name}
-            className="h-full w-full object-cover"
+            className="h-auto w-full object-cover"
             loading="lazy"
           />
         ) : (
-          <div className="flex h-full items-center justify-center">
+          <div className="flex aspect-[4/3] items-center justify-center">
             <FileText className="h-12 w-12 text-muted-foreground/30" />
           </div>
         )}
 
-        <button
-          onClick={handleDownload}
-          className="absolute right-3 top-3 rounded-lg bg-primary p-2 text-primary-foreground opacity-0 shadow-lg transition-all duration-200 hover:scale-105 group-hover:opacity-100"
-          title="下载源文件"
-        >
-          <Download className="h-4 w-4" />
-        </button>
+        <div className="absolute right-3 top-3 flex gap-2">
+          {onToggleFavorite && (
+            <button
+              onClick={handleFavorite}
+              className={`rounded-lg p-2 shadow-lg transition-all duration-200 hover:scale-105 ${
+                isFavorite
+                  ? "bg-yellow-400/20 text-yellow-400 opacity-100"
+                  : "bg-secondary text-muted-foreground opacity-0 group-hover:opacity-100"
+              }`}
+              title={isFavorite ? "取消收藏" : "收藏"}
+            >
+              <Star className="h-4 w-4" fill={isFavorite ? "currentColor" : "none"} />
+            </button>
+          )}
+          <button
+            onClick={handleDownload}
+            className="rounded-lg bg-primary p-2 text-primary-foreground opacity-0 shadow-lg transition-all duration-200 hover:scale-105 group-hover:opacity-100"
+            title="下载源文件"
+          >
+            <Download className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="space-y-2 p-3.5">

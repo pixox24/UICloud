@@ -1,26 +1,49 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, Pencil, Trash2, Eye, EyeOff, Save, X } from "lucide-react";
+import { Loader2, Pencil, Trash2, Save, X } from "lucide-react";
+import { useToast } from "@/components/Toast";
+import Pagination from "@/components/Pagination";
 import { formatFileSize } from "@/lib/utils";
 import type { Asset, Category } from "@/types";
+
+interface EditFormData {
+  name: string;
+  description: string;
+  category_id: number | string;
+  tags: string;
+  is_active: number;
+}
 
 export default function AssetsManagePage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editData, setEditData] = useState<any>({});
+  const [editData, setEditData] = useState<EditFormData>({
+    name: "",
+    description: "",
+    category_id: "",
+    tags: "",
+    is_active: 1,
+  });
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const { success, error: showError } = useToast();
 
   const fetchAssets = async () => {
     setLoading(true);
-    const res = await fetch(`/api/assets?page=${page}&limit=20&all=1`);
-    const data = await res.json();
-    setAssets(data.assets || []);
-    setTotalPages(data.totalPages || 1);
-    setLoading(false);
+    try {
+      const res = await fetch(`/api/assets?page=${page}&limit=20&all=1`);
+      if (!res.ok) throw new Error("加载失败");
+      const data = await res.json();
+      setAssets(data.assets || []);
+      setTotalPages(data.totalPages || 1);
+    } catch {
+      showError("加载资产失败，请重试");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -42,43 +65,61 @@ export default function AssetsManagePage() {
 
   const saveEdit = async () => {
     if (!editingId) return;
-    await fetch("/api/assets", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: editingId,
-        ...editData,
-        category_id: editData.category_id || null,
-        tags: editData.tags.split(",").map((t: string) => t.trim()).filter(Boolean),
-      }),
-    });
-    setEditingId(null);
-    fetchAssets();
+    try {
+      const res = await fetch("/api/assets", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingId,
+          ...editData,
+          category_id: editData.category_id || null,
+          tags: editData.tags.split(",").map((t) => t.trim()).filter(Boolean),
+        }),
+      });
+      if (!res.ok) throw new Error("保存失败");
+      setEditingId(null);
+      success("保存成功");
+      fetchAssets();
+    } catch {
+      showError("保存失败，请重试");
+    }
   };
 
   const deleteAsset = async (id: number) => {
     if (!confirm("确定删除？")) return;
-    await fetch("/api/assets", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    fetchAssets();
+    try {
+      const res = await fetch("/api/assets", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error("删除失败");
+      success("删除成功");
+      fetchAssets();
+    } catch {
+      showError("删除失败，请重试");
+    }
   };
 
   const toggleActive = async (asset: Asset) => {
-    await fetch("/api/assets", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: asset.id,
-        name: asset.name,
-        description: asset.description,
-        category_id: asset.category_id,
-        is_active: asset.is_active ? 0 : 1,
-      }),
-    });
-    fetchAssets();
+    try {
+      const res = await fetch("/api/assets", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: asset.id,
+          name: asset.name,
+          description: asset.description,
+          category_id: asset.category_id,
+          is_active: asset.is_active ? 0 : 1,
+        }),
+      });
+      if (!res.ok) throw new Error("操作失败");
+      success(asset.is_active ? "已下架" : "已上架");
+      fetchAssets();
+    } catch {
+      showError("操作失败，请重试");
+    }
   };
 
   return (
@@ -88,15 +129,15 @@ export default function AssetsManagePage() {
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
       ) : (
-        <div className="border border-border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="border border-border rounded-xl overflow-hidden overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-secondary">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">名称</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">分类</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">分类</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">格式</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">大小</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">下载</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">大小</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">下载</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">状态</th>
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">操作</th>
               </tr>
@@ -115,7 +156,7 @@ export default function AssetsManagePage() {
                       <span className="font-medium">{asset.name}</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                  <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">
                     {editingId === asset.id ? (
                       <select
                         value={editData.category_id}
@@ -132,8 +173,8 @@ export default function AssetsManagePage() {
                   <td className="px-4 py-3">
                     <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">{asset.file_format}</span>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{formatFileSize(asset.file_size)}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{asset.download_count}</td>
+                  <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{formatFileSize(asset.file_size)}</td>
+                  <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{asset.download_count}</td>
                   <td className="px-4 py-3">
                     <button
                       onClick={() => toggleActive(asset)}
@@ -164,13 +205,7 @@ export default function AssetsManagePage() {
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 pt-4">
-          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1.5 rounded-md bg-secondary text-sm disabled:opacity-30">上一页</button>
-          <span className="text-sm text-muted-foreground px-3">{page} / {totalPages}</span>
-          <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1.5 rounded-md bg-secondary text-sm disabled:opacity-30">下一页</button>
-        </div>
-      )}
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPreferredThumbnailPath, parseUseScenarioValue } from "@/lib/asset-options";
 import { getCurrentUser, requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { logAudit } from "@/lib/audit";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -12,10 +13,11 @@ export async function GET(req: NextRequest) {
   }
 
   const url = req.nextUrl;
-  const page = parseInteger(url.searchParams.get("page"), 1);
-  const limit = parseInteger(url.searchParams.get("limit"), 20);
+  const page = Math.max(1, parseInteger(url.searchParams.get("page"), 1));
+  const limit = Math.min(100, Math.max(1, parseInteger(url.searchParams.get("limit"), 20)));
   const offset = (page - 1) * limit;
   const showAll = url.searchParams.get("all") === "1";
+  const sortBy = url.searchParams.get("sort") || "newest";
 
   let where = showAll ? "WHERE 1=1" : "WHERE a.is_active = 1";
   const params: Array<string | number> = [];
@@ -63,14 +65,21 @@ export async function GET(req: NextRequest) {
   });
 
   appendExactFilter(url.searchParams.get("use_scenario"), (useScenario) => {
-    where += " AND a.use_scenario LIKE ?";
-    params.push(`%\"${useScenario}\"%`);
+    where += " AND a.use_scenario LIKE ? ESCAPE '\\'";
+    params.push(`%\\\"${escapeLikePattern(useScenario)}\\\"%`);
   });
 
   const db = getDb();
   const total = db
     .prepare(`SELECT COUNT(*) as total FROM assets a ${where}`)
     .get(...params) as { total: number };
+
+  const orderBy =
+    sortBy === "downloads"
+      ? "ORDER BY a.download_count DESC"
+      : sortBy === "views"
+      ? "ORDER BY a.view_count DESC"
+      : "ORDER BY a.created_at DESC";
 
   const assets = db
     .prepare(
@@ -79,7 +88,7 @@ export async function GET(req: NextRequest) {
        LEFT JOIN categories c ON c.id = a.category_id
        LEFT JOIN users u ON u.id = a.created_by
        ${where}
-       ORDER BY a.created_at DESC
+       ${orderBy}
        LIMIT ? OFFSET ?`
     )
     .all(...params, limit, offset) as Array<Record<string, unknown>>;
@@ -105,7 +114,7 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    await requireAdmin();
+    const user = await requireAdmin();
     const payload = await req.json();
     const db = getDb();
 
@@ -161,6 +170,8 @@ export async function PUT(req: NextRequest) {
       }
     }
 
+    logAudit(user, "update", "asset", payload.id, payload.name);
+
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     return NextResponse.json(
@@ -172,7 +183,7 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    await requireAdmin();
+    const user = await requireAdmin();
     const { id } = await req.json();
     const db = getDb();
     const asset = db
@@ -216,6 +227,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     db.prepare("DELETE FROM assets WHERE id = ?").run(id);
+    logAudit(user, "delete", "asset", id);
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     return NextResponse.json(
@@ -225,12 +237,16 @@ export async function DELETE(req: NextRequest) {
   }
 }
 
+function escapeLikePattern(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
 function appendLikeFilter(value: string | null, apply: (value: string) => void) {
   if (!value) {
     return;
   }
 
-  apply(`%${value}%`);
+  apply(`%${escapeLikePattern(value)}%`);
 }
 
 function appendExactFilter(value: string | null, apply: (value: string) => void) {

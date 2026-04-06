@@ -17,7 +17,7 @@ export async function GET(
   const asset = db
     .prepare("SELECT * FROM assets WHERE id = ? AND is_active = 1")
     .get(parseInt(params.id, 10)) as
-    | { id: number; name: string; file_path: string; mime_type: string | null }
+    | { id: number; name: string; file_path: string; file_size: number; mime_type: string | null }
     | undefined;
 
   if (!asset) {
@@ -31,15 +31,17 @@ export async function GET(
 
   db.prepare("UPDATE assets SET download_count = download_count + 1 WHERE id = ?").run(asset.id);
 
-  const fileBuffer = fs.readFileSync(filePath);
   const extension = path.extname(asset.file_path);
   const originalName = `${asset.name}${extension}`;
 
-  return new NextResponse(fileBuffer, {
+  const fileStream = fs.createReadStream(filePath);
+
+  return new NextResponse(fileStream as any, {
     headers: {
       "Content-Type": asset.mime_type || "application/octet-stream",
       "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(originalName)}`,
-      "Content-Length": fileBuffer.length.toString(),
+      "Content-Length": asset.file_size.toString(),
+      "Cache-Control": "no-store",
     },
   });
 }

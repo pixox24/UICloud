@@ -98,6 +98,23 @@ export function initializeDatabase() {
       tag_id INTEGER REFERENCES tags(id) ON DELETE CASCADE,
       PRIMARY KEY (asset_id, tag_id)
     );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id INTEGER,
+      details TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS asset_favorites (
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      asset_id INTEGER REFERENCES assets(id) ON DELETE CASCADE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, asset_id)
+    );
   `);
 
   ensureAssetColumns(db);

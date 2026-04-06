@@ -6,6 +6,7 @@ import type { AspectRatio, ColorTheme, Orientation } from "@/lib/asset-options";
 import { isAspectRatio, isColorTheme, isOrientation, parseUseScenarioValue } from "@/lib/asset-options";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { logAudit } from "@/lib/audit";
 import {
   MAX_UPLOAD_SIZE_BYTES,
   THUMBNAIL_ORIGINAL_DIR,
@@ -206,6 +207,8 @@ export async function POST(req: NextRequest) {
 
     attachTags(db, Number(result.lastInsertRowid), tagsStr);
 
+    logAudit(user, "create", "asset", Number(result.lastInsertRowid), name);
+
     return NextResponse.json({
       success: true,
       id: result.lastInsertRowid,
@@ -352,7 +355,7 @@ function attachTags(db: ReturnType<typeof getDb>, assetId: number, tagsStr: stri
       | undefined;
 
     if (tag) {
-      db.prepare("INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)").run(assetId, tag.id);
+      db.prepare("INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)").run(assetId, tag.id);
     }
   }
 }

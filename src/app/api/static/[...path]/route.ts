@@ -39,9 +39,9 @@ export async function GET(
 
   const ext = path.extname(requestedPath).toLowerCase();
   const contentType = MIME_TYPES[ext] || "application/octet-stream";
-  const fileBuffer = fs.readFileSync(requestedPath);
+  const fileStream = fs.createReadStream(requestedPath);
 
-  return new NextResponse(fileBuffer, {
+  return new NextResponse(fileStream as any, {
     headers: {
       "Content-Type": contentType,
       "Cache-Control": "public, max-age=31536000, immutable",

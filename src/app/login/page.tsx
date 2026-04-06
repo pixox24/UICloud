@@ -27,8 +27,8 @@ export default function LoginPage() {
       if (!res.ok) throw new Error(data.error);
       router.push("/");
       router.refresh();
-    } catch (err: any) {
-      setError(err.message || "登录失败");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "登录失败");
     } finally {
       setLoading(false);
     }

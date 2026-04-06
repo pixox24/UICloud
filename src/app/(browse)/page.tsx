@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Filter, Loader2, Search, X } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
+import { Filter, Loader2, Search, X, Star } from "lucide-react";
 import Header from "@/components/Header";
 import AssetCard from "@/components/AssetCard";
 import AssetDetailModal from "@/components/AssetDetailModal";
+import Pagination from "@/components/Pagination";
+import { useDebounce } from "@/lib/use-debounce";
 import {
   ASPECT_RATIO_OPTIONS,
   COLOR_THEME_OPTIONS,
@@ -17,24 +20,29 @@ import type { Asset, Category, Tag, User } from "@/types";
 const FORMAT_OPTIONS = ["AI", "EPS", "PSD", "XD", "SKETCH", "FIG", "PNG", "JPG", "JPEG", "WEBP", "GIF", "SVG", "PDF"];
 
 export default function BrowsePage() {
+  const searchParams = useSearchParams();
+
   const [user, setUser] = useState<User | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
-  const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
 
-  const [search, setSearch] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [tagFilter, setTagFilter] = useState("");
-  const [formatFilter, setFormatFilter] = useState("");
-  const [fileTypeFilter, setFileTypeFilter] = useState("");
-  const [orientationFilter, setOrientationFilter] = useState("");
-  const [aspectRatioFilter, setAspectRatioFilter] = useState("");
-  const [colorThemeFilter, setColorThemeFilter] = useState("");
-  const [useScenarioFilter, setUseScenarioFilter] = useState("");
+  const [search, setSearch] = useState(searchParams.get("search") || "");
+  const debouncedSearch = useDebounce(search, 300);
+  const [categoryId, setCategoryId] = useState(searchParams.get("category_id") || "");
+  const [tagFilter, setTagFilter] = useState(searchParams.get("tag") || "");
+  const [formatFilter, setFormatFilter] = useState(searchParams.get("format") || "");
+  const [fileTypeFilter, setFileTypeFilter] = useState(searchParams.get("file_type") || "");
+  const [orientationFilter, setOrientationFilter] = useState(searchParams.get("orientation") || "");
+  const [aspectRatioFilter, setAspectRatioFilter] = useState(searchParams.get("aspect_ratio") || "");
+  const [colorThemeFilter, setColorThemeFilter] = useState(searchParams.get("color_theme") || "");
+  const [useScenarioFilter, setUseScenarioFilter] = useState(searchParams.get("use_scenario") || "");
+  const [showFavorites, setShowFavorites] = useState(searchParams.get("favorites") === "1");
+  const [sortBy, setSortBy] = useState(searchParams.get("sort") || "newest");
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -48,17 +56,51 @@ export default function BrowsePage() {
       .then((data) => setTags(data.tags || []));
   }, []);
 
+  const fetchFavorites = useCallback(() => {
+    fetch("/api/favorites?favorites=1")
+      .then((r) => r.json())
+      .then((data) => {
+        const ids = new Set<number>((data.assets || []).map((a: Asset) => a.id));
+        setFavoriteIds(ids);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (user) fetchFavorites();
+  }, [user, fetchFavorites]);
+
   useEffect(() => {
     const controller = new AbortController();
 
     async function fetchAssets() {
       setLoading(true);
 
+      if (showFavorites) {
+        try {
+          const response = await fetch("/api/favorites?favorites=1", {
+            signal: controller.signal,
+          });
+          const data = await response.json();
+          setAssets(data.assets || []);
+          setTotalPages(1);
+        } catch (error: unknown) {
+          if (error instanceof Error && error.name !== "AbortError") {
+            setAssets([]);
+            setTotalPages(1);
+          }
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+
       const params = new URLSearchParams({
-        page: String(page),
+        page: searchParams.get("page") || "1",
         limit: "20",
+        sort: sortBy,
       });
-      if (search) params.set("search", search);
+      if (debouncedSearch) params.set("search", debouncedSearch);
       if (categoryId) params.set("category_id", categoryId);
       if (tagFilter) params.set("tag", tagFilter);
       if (formatFilter) params.set("format", formatFilter);
@@ -68,26 +110,30 @@ export default function BrowsePage() {
       if (colorThemeFilter) params.set("color_theme", colorThemeFilter);
       if (useScenarioFilter) params.set("use_scenario", useScenarioFilter);
 
-      const response = await fetch(`/api/assets?${params.toString()}`, {
-        signal: controller.signal,
-      });
-      const data = await response.json();
+      try {
+        const response = await fetch(`/api/assets?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        const data = await response.json();
 
-      setAssets(data.assets || []);
-      setTotalPages(data.totalPages || 1);
-      setLoading(false);
-    }
-
-    fetchAssets().catch((error) => {
-      if (error.name !== "AbortError") {
+        setAssets(data.assets || []);
+        setTotalPages(data.totalPages || 1);
+      } catch (error: unknown) {
+        if (error instanceof Error && error.name !== "AbortError") {
+          setAssets([]);
+          setTotalPages(1);
+        }
+      } finally {
         setLoading(false);
       }
-    });
+    }
+
+    fetchAssets();
 
     return () => controller.abort();
   }, [
-    page,
-    search,
+    searchParams,
+    debouncedSearch,
     categoryId,
     tagFilter,
     formatFilter,
@@ -96,7 +142,26 @@ export default function BrowsePage() {
     aspectRatioFilter,
     colorThemeFilter,
     useScenarioFilter,
+    showFavorites,
+    sortBy,
   ]);
+
+  const updateFilter = (key: string, value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set(key, value);
+    } else {
+      params.delete(key);
+    }
+    params.set("page", "1");
+    window.history.replaceState(null, "", `?${params.toString()}`);
+  };
+
+  const setPage = (page: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(page));
+    window.history.replaceState(null, "", `?${params.toString()}`);
+  };
 
   const resetFilters = () => {
     setSearch("");
@@ -108,7 +173,61 @@ export default function BrowsePage() {
     setAspectRatioFilter("");
     setColorThemeFilter("");
     setUseScenarioFilter("");
-    setPage(1);
+    setShowFavorites(false);
+    setSortBy("newest");
+    window.history.replaceState(null, "", window.location.pathname);
+  };
+
+  const handleSortChange = (value: string) => {
+    setSortBy(value);
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === "newest") {
+      params.delete("sort");
+    } else {
+      params.set("sort", value);
+    }
+    params.delete("page");
+    window.history.replaceState(null, "", `?${params.toString()}`);
+  };
+
+  const toggleFavoritesView = () => {
+    const next = !showFavorites;
+    setShowFavorites(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next) {
+      params.set("favorites", "1");
+    } else {
+      params.delete("favorites");
+    }
+    params.delete("page");
+    window.history.replaceState(null, "", `?${params.toString()}`);
+  };
+
+  const toggleFavorite = async (assetId: number) => {
+    const isFav = favoriteIds.has(assetId);
+    try {
+      if (isFav) {
+        await fetch("/api/favorites", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assetId }),
+        });
+        setFavoriteIds((prev) => {
+          const next = new Set(prev);
+          next.delete(assetId);
+          return next;
+        });
+      } else {
+        await fetch("/api/favorites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assetId }),
+        });
+        setFavoriteIds((prev) => new Set(prev).add(assetId));
+      }
+    } catch {
+      // Silently fail
+    }
   };
 
   const hasActiveFilters =
@@ -120,7 +239,11 @@ export default function BrowsePage() {
     !!orientationFilter ||
     !!aspectRatioFilter ||
     !!colorThemeFilter ||
-    !!useScenarioFilter;
+    !!useScenarioFilter ||
+    showFavorites;
+
+  const currentPage = parseInt(searchParams.get("page") || "1", 10);
+  const displayTotalPages = showFavorites ? 1 : totalPages;
 
   return (
     <div className="min-h-screen">
@@ -133,10 +256,7 @@ export default function BrowsePage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={search}
-                onChange={(event) => {
-                  setPage(1);
-                  setSearch(event.target.value);
-                }}
+                onChange={(event) => setSearch(event.target.value)}
                 placeholder="搜索名称、描述、标签"
                 className="w-full rounded-lg border border-border bg-secondary py-2.5 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
@@ -145,8 +265,8 @@ export default function BrowsePage() {
             <select
               value={categoryId}
               onChange={(event) => {
-                setPage(1);
                 setCategoryId(event.target.value);
+                updateFilter("category_id", event.target.value);
               }}
               className="rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
@@ -161,8 +281,8 @@ export default function BrowsePage() {
             <select
               value={tagFilter}
               onChange={(event) => {
-                setPage(1);
                 setTagFilter(event.target.value);
+                updateFilter("tag", event.target.value);
               }}
               className="rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
@@ -177,8 +297,8 @@ export default function BrowsePage() {
             <select
               value={formatFilter}
               onChange={(event) => {
-                setPage(1);
                 setFormatFilter(event.target.value);
+                updateFilter("format", event.target.value);
               }}
               className="rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
@@ -195,8 +315,8 @@ export default function BrowsePage() {
             <select
               value={fileTypeFilter}
               onChange={(event) => {
-                setPage(1);
                 setFileTypeFilter(event.target.value);
+                updateFilter("file_type", event.target.value);
               }}
               className="rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
@@ -211,8 +331,8 @@ export default function BrowsePage() {
             <select
               value={orientationFilter}
               onChange={(event) => {
-                setPage(1);
                 setOrientationFilter(event.target.value);
+                updateFilter("orientation", event.target.value);
               }}
               className="rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
@@ -227,8 +347,8 @@ export default function BrowsePage() {
             <select
               value={aspectRatioFilter}
               onChange={(event) => {
-                setPage(1);
                 setAspectRatioFilter(event.target.value);
+                updateFilter("aspect_ratio", event.target.value);
               }}
               className="rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
@@ -243,8 +363,8 @@ export default function BrowsePage() {
             <select
               value={colorThemeFilter}
               onChange={(event) => {
-                setPage(1);
                 setColorThemeFilter(event.target.value);
+                updateFilter("color_theme", event.target.value);
               }}
               className="rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
@@ -258,10 +378,20 @@ export default function BrowsePage() {
 
             <div className="flex gap-3">
               <select
+                value={sortBy}
+                onChange={(event) => handleSortChange(event.target.value)}
+                className="rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="newest">最新上传</option>
+                <option value="downloads">最多下载</option>
+                <option value="views">最多浏览</option>
+              </select>
+
+              <select
                 value={useScenarioFilter}
                 onChange={(event) => {
-                  setPage(1);
                   setUseScenarioFilter(event.target.value);
+                  updateFilter("use_scenario", event.target.value);
                 }}
                 className="min-w-0 flex-1 rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               >
@@ -272,6 +402,19 @@ export default function BrowsePage() {
                   </option>
                 ))}
               </select>
+
+              <button
+                type="button"
+                onClick={toggleFavoritesView}
+                className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                  showFavorites
+                    ? "border-yellow-400/40 bg-yellow-400/10 text-yellow-400"
+                    : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                }`}
+              >
+                <Star className="h-4 w-4" fill={showFavorites ? "currentColor" : "none"} />
+                收藏
+              </button>
 
               {hasActiveFilters ? (
                 <button
@@ -293,38 +436,48 @@ export default function BrowsePage() {
           </div>
         ) : assets.length === 0 ? (
           <div className="py-32 text-center text-muted-foreground">
-            <Filter className="mx-auto mb-3 h-12 w-12 opacity-30" />
-            <p>没有匹配的资产</p>
+            {showFavorites ? (
+              <>
+                <Star className="mx-auto mb-3 h-12 w-12 opacity-30" />
+                <p>暂无收藏的资产</p>
+                <button
+                  onClick={toggleFavoritesView}
+                  className="mt-3 text-sm text-primary hover:underline"
+                >
+                  返回全部资产
+                </button>
+              </>
+            ) : (
+              <>
+                <Filter className="mx-auto mb-3 h-12 w-12 opacity-30" />
+                <p>没有匹配的资产</p>
+                {hasActiveFilters && (
+                  <button
+                    onClick={resetFilters}
+                    className="mt-3 text-sm text-primary hover:underline"
+                  >
+                    重置筛选条件
+                  </button>
+                )}
+              </>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+          <div className="columns-2 gap-4 space-y-4 sm:columns-3 md:columns-4 lg:columns-5 xl:columns-6">
             {assets.map((asset) => (
-              <AssetCard key={asset.id} asset={asset} onSelect={setSelectedAsset} />
+              <div key={asset.id} className="break-inside-avoid">
+                <AssetCard
+                  asset={asset}
+                  onSelect={setSelectedAsset}
+                  isFavorite={favoriteIds.has(asset.id)}
+                  onToggleFavorite={toggleFavorite}
+                />
+              </div>
             ))}
           </div>
         )}
 
-        {totalPages > 1 ? (
-          <div className="flex items-center justify-center gap-2 pt-4">
-            <button
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              disabled={page === 1}
-              className="rounded-md bg-secondary px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:opacity-30"
-            >
-              上一页
-            </button>
-            <span className="px-3 text-sm text-muted-foreground">
-              {page} / {totalPages}
-            </span>
-            <button
-              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-              disabled={page === totalPages}
-              className="rounded-md bg-secondary px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:opacity-30"
-            >
-              下一页
-            </button>
-          </div>
-        ) : null}
+        <Pagination page={currentPage} totalPages={displayTotalPages} onPageChange={setPage} />
       </main>
 
       {selectedAsset ? (

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Pencil, Trash2, Save, X, GripVertical, Loader2 } from "lucide-react";
+import { useToast } from "@/components/Toast";
 import type { Category } from "@/types";
 
 export default function CategoriesPage() {
@@ -13,13 +14,21 @@ export default function CategoriesPage() {
   const [newName, setNewName] = useState("");
   const [newParentId, setNewParentId] = useState("");
   const [dragItem, setDragItem] = useState<number | null>(null);
+  const [dragOverId, setDragOverId] = useState<number | null>(null);
+  const { success, error: showError } = useToast();
 
   const fetchCategories = async () => {
     setLoading(true);
-    const res = await fetch("/api/categories");
-    const data = await res.json();
-    setCategories(data.categories || []);
-    setLoading(false);
+    try {
+      const res = await fetch("/api/categories");
+      if (!res.ok) throw new Error("加载失败");
+      const data = await res.json();
+      setCategories(data.categories || []);
+    } catch {
+      showError("加载分类失败");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchCategories(); }, []);
@@ -28,45 +37,70 @@ export default function CategoriesPage() {
 
   const addCategory = async () => {
     if (!newName.trim()) return;
-    await fetch("/api/categories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: newName.trim(),
-        parent_id: newParentId ? parseInt(newParentId) : null,
-        sort_order: categories.length,
-      }),
-    });
-    setNewName("");
-    setNewParentId("");
-    fetchCategories();
+    try {
+      const res = await fetch("/api/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newName.trim(),
+          parent_id: newParentId ? parseInt(newParentId) : null,
+          sort_order: categories.length,
+        }),
+      });
+      if (!res.ok) throw new Error("添加失败");
+      setNewName("");
+      setNewParentId("");
+      success("分类添加成功");
+      fetchCategories();
+    } catch {
+      showError("添加分类失败");
+    }
   };
 
   const saveEdit = async (id: number) => {
-    await fetch("/api/categories", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id,
-        name: editName,
-        parent_id: editParentId ? parseInt(editParentId) : null,
-      }),
-    });
-    setEditingId(null);
-    fetchCategories();
+    try {
+      const res = await fetch("/api/categories", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          name: editName,
+          parent_id: editParentId ? parseInt(editParentId) : null,
+        }),
+      });
+      if (!res.ok) throw new Error("保存失败");
+      setEditingId(null);
+      success("保存成功");
+      fetchCategories();
+    } catch {
+      showError("保存失败");
+    }
   };
 
   const deleteCategory = async (id: number) => {
     if (!confirm("确定删除此分类？")) return;
-    await fetch("/api/categories", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    fetchCategories();
+    try {
+      const res = await fetch("/api/categories", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error("删除失败");
+      success("删除成功");
+      fetchCategories();
+    } catch {
+      showError("删除分类失败");
+    }
   };
 
   const handleDragStart = (id: number) => setDragItem(id);
+
+  const handleDragEnter = (id: number) => setDragOverId(id);
+
+  const handleDragEnd = () => {
+    setDragItem(null);
+    setDragOverId(null);
+  };
 
   const handleDrop = async (targetId: number) => {
     if (dragItem === null || dragItem === targetId) return;
@@ -76,16 +110,25 @@ export default function CategoriesPage() {
     const [moved] = newOrder.splice(fromIdx, 1);
     newOrder.splice(toIdx, 0, moved);
 
-    // Update sort orders
-    for (let i = 0; i < newOrder.length; i++) {
-      await fetch("/api/categories", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: newOrder[i].id, name: newOrder[i].name, parent_id: newOrder[i].parent_id, sort_order: i }),
-      });
+    try {
+      const updates = newOrder.map((cat, i) =>
+        fetch("/api/categories", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: cat.id, name: cat.name, parent_id: cat.parent_id, sort_order: i }),
+        })
+      );
+      const results = await Promise.all(updates);
+      const failed = results.some((r) => !r.ok);
+      if (failed) throw new Error("部分更新失败");
+      success("排序已更新");
+    } catch {
+      showError("排序更新失败");
+    } finally {
+      setDragItem(null);
+      setDragOverId(null);
+      fetchCategories();
     }
-    setDragItem(null);
-    fetchCategories();
   };
 
   const startEdit = (cat: Category) => {
@@ -98,7 +141,6 @@ export default function CategoriesPage() {
     <div className="max-w-2xl">
       <h1 className="text-xl font-semibold mb-6">分类管理</h1>
 
-      {/* Add new */}
       <div className="flex items-center gap-2 mb-6">
         <input
           value={newName}
@@ -134,9 +176,15 @@ export default function CategoriesPage() {
               key={cat.id}
               draggable
               onDragStart={() => handleDragStart(cat.id)}
+              onDragEnter={() => handleDragEnter(cat.id)}
+              onDragEnd={handleDragEnd}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => handleDrop(cat.id)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg bg-card border border-border hover:border-primary/20 transition-colors ${cat.parent_id ? "ml-8" : ""}`}
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg bg-card border transition-colors ${
+                dragOverId === cat.id
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-primary/20"
+              } ${cat.parent_id ? "ml-8" : ""}`}
             >
               <GripVertical className="w-4 h-4 text-muted-foreground cursor-grab shrink-0" />
 
