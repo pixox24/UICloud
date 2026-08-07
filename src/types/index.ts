@@ -59,3 +59,14 @@ export interface Tag {
   id: number;
   name: string;
 }
+
+export type MenuIconId = "link" | "external-link" | "bookmark" | "toolbox";
+
+export interface Menu {
+  id: number;
+  title: string;
+  icon: MenuIconId;
+  url: string;
+  sort_order: number;
+  is_active: number;
+}

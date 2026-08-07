@@ -16,6 +16,16 @@ interface JwtTokenPayload extends JwtPayload {
   iat: number;
 }
 
+export class AuthError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "AuthError";
+    this.status = status;
+  }
+}
+
 function base64UrlEncode(input: string | Uint8Array) {
   const bytes = typeof input === "string" ? encoder.encode(input) : input;
   let binary = "";
@@ -121,11 +131,24 @@ export async function getCurrentUser(): Promise<JwtPayload | null> {
   return verifyToken(token);
 }
 
-export async function requireAdmin(): Promise<JwtPayload> {
+export async function requireUser(): Promise<JwtPayload> {
   const user = await getCurrentUser();
-  if (!user || user.role !== "admin") {
-    throw new Error("Unauthorized");
+  if (!user) {
+    throw new AuthError("Unauthorized", 401);
   }
 
   return user;
+}
+
+export async function requireAdmin(): Promise<JwtPayload> {
+  const user = await requireUser();
+  if (user.role !== "admin") {
+    throw new AuthError("Forbidden", 403);
+  }
+
+  return user;
+}
+
+export function isAuthError(error: unknown): error is AuthError {
+  return error instanceof AuthError;
 }

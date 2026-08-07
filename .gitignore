@@ -5,5 +5,15 @@ uploads/files/*
 uploads/thumbnails/*
 !uploads/files/.gitkeep
 !uploads/thumbnails/.gitkeep
+uploads/assets/*
+uploads/logo/*
 .env
 .env.local
+
+# Runtime / generated
+.pm2/
+.pm2\ 
+.codex-runtime/
+.tmp-debug/
+logs/
+tsconfig.tsbuildinfo

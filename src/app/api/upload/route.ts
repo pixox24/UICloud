@@ -2,17 +2,32 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  buildDefaultAssetName,
+  DEFAULT_ASSET_NAME_CATEGORY_CODE,
+  inferAssetNameShapeCode,
+  isAssetNameCategoryCode,
+} from "@/lib/asset-naming";
 import type { AspectRatio, ColorTheme, Orientation } from "@/lib/asset-options";
-import { isAspectRatio, isColorTheme, isOrientation, parseUseScenarioValue } from "@/lib/asset-options";
+import {
+  isAspectRatio,
+  isColorTheme,
+  isOrientation,
+  parseUseScenarioValue,
+} from "@/lib/asset-options";
+import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { logAudit } from "@/lib/audit";
 import {
   MAX_UPLOAD_SIZE_BYTES,
   THUMBNAIL_ORIGINAL_DIR,
   UPLOAD_ASSETS_DIR,
   ensureRuntimeDirs,
 } from "@/lib/runtime-paths";
+import {
+  extractPreviewFromSource,
+  supportsSourcePreview,
+} from "@/lib/source-preview";
 import {
   analyzeImageVisuals,
   calculateFileHash,
@@ -56,6 +71,19 @@ type VisualMetadata = {
   primaryColor: string | null;
 };
 
+type PreviewSource = "uploaded" | "image" | "source" | "none";
+
+type ThumbnailPreparationResult = {
+  absolutePath: string;
+  originalRelativePath: string;
+  thumbnailLarge: string;
+  thumbnailMedium: string;
+  thumbnailSmall: string;
+  previewGenerated: boolean;
+  previewSource: PreviewSource;
+  previewWarning: string | null;
+};
+
 export async function POST(req: NextRequest) {
   const createdPaths: string[] = [];
 
@@ -65,7 +93,8 @@ export async function POST(req: NextRequest) {
 
     const file = formData.get("file") as File | null;
     const thumbnail = formData.get("thumbnail") as File | null;
-    const name = ((formData.get("name") as string) || "").trim();
+    const requestedName = ((formData.get("name") as string) || "").trim();
+    const categoryCodeValue = ((formData.get("asset_name_category_code") as string) || "").trim().toUpperCase();
     const description = ((formData.get("description") as string) || "").trim();
     const categoryId = (formData.get("category_id") as string) || "";
     const tagsStr = ((formData.get("tags") as string) || "").trim();
@@ -77,12 +106,12 @@ export async function POST(req: NextRequest) {
     const colorThemeStr = (formData.get("color_theme") as string) || "";
     const useScenarioStr = (formData.get("use_scenario") as string) || "[]";
 
-    if (!file || !name) {
-      return NextResponse.json({ error: "文件和名称不能为空" }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: "请选择要上传的文件。" }, { status: 400 });
     }
 
     if (file.size > MAX_UPLOAD_SIZE_BYTES) {
-      return NextResponse.json({ error: "单个文件最大支持 500MB" }, { status: 400 });
+      return NextResponse.json({ error: "单个文件最大支持 500MB。" }, { status: 400 });
     }
 
     const extension = path.extname(file.name).toLowerCase();
@@ -125,7 +154,6 @@ export async function POST(req: NextRequest) {
 
     const fileType = detectFileType(extension);
     const mimeType = file.type || detectMimeType(extension);
-
     const thumbnailSource = await prepareThumbnailSource({
       fileId,
       fileType,
@@ -148,6 +176,14 @@ export async function POST(req: NextRequest) {
     const parentId = parentIdStr ? parseInt(parentIdStr, 10) : null;
     const categoryValue = categoryId ? parseInt(categoryId, 10) : null;
     const version = parentId ? resolveNextVersion(db, parentId) : 1;
+    const categoryCode = isAssetNameCategoryCode(categoryCodeValue)
+      ? categoryCodeValue
+      : DEFAULT_ASSET_NAME_CATEGORY_CODE;
+    const shapeCode = inferAssetNameShapeCode({
+      aspectRatio: visualMetadata.aspectRatio,
+      orientation: visualMetadata.orientation,
+    });
+    const provisionalName = requestedName || `pending_${fileId}`;
 
     const result = db
       .prepare(
@@ -179,7 +215,7 @@ export async function POST(req: NextRequest) {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        name,
+        provisionalName,
         description,
         categoryValue,
         relativeFilePath,
@@ -205,21 +241,38 @@ export async function POST(req: NextRequest) {
         user.userId
       );
 
-    attachTags(db, Number(result.lastInsertRowid), tagsStr);
+    const assetId = Number(result.lastInsertRowid);
+    const finalName = requestedName || buildDefaultAssetName(assetId, categoryCode, shapeCode);
+    const usedAutoName = !requestedName;
 
-    logAudit(user, "create", "asset", Number(result.lastInsertRowid), name);
+    if (finalName !== provisionalName) {
+      db.prepare("UPDATE assets SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(
+        finalName,
+        assetId
+      );
+    }
+
+    attachTags(db, assetId, tagsStr);
+    logAudit(user, "create", "asset", assetId, finalName);
 
     return NextResponse.json({
       success: true,
-      id: result.lastInsertRowid,
+      id: assetId,
       fileHash,
       fileType,
+      assetName: finalName,
+      usedAutoName,
+      assetNameCategoryCode: categoryCode,
+      assetNameShapeCode: shapeCode,
+      previewGenerated: thumbnailSource.previewGenerated,
+      previewSource: thumbnailSource.previewSource,
+      previewWarning: thumbnailSource.previewWarning,
     });
   } catch (error: unknown) {
     cleanupCreatedFiles(createdPaths);
     console.error("Upload error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "上传失败" },
+      { error: error instanceof Error ? error.message : "上传失败。" },
       { status: 500 }
     );
   }
@@ -232,43 +285,82 @@ async function prepareThumbnailSource(input: {
   thumbnail: File | null;
   absoluteFilePath: string;
   createdPaths: string[];
-}) {
-  const result = {
+}): Promise<ThumbnailPreparationResult> {
+  const result: ThumbnailPreparationResult = {
     absolutePath: "",
     originalRelativePath: "",
     thumbnailLarge: "",
     thumbnailMedium: "",
     thumbnailSmall: "",
+    previewGenerated: false,
+    previewSource: "none",
+    previewWarning: null,
   };
 
-  let thumbnailAbsolutePath = "";
   if (input.thumbnail && input.thumbnail.size > 0) {
     const thumbnailExtension = path.extname(input.thumbnail.name).toLowerCase() || ".png";
     const originalName = `${input.fileId}${thumbnailExtension}`;
-    thumbnailAbsolutePath = path.join(THUMBNAIL_ORIGINAL_DIR, originalName);
+    const thumbnailAbsolutePath = path.join(THUMBNAIL_ORIGINAL_DIR, originalName);
     fs.writeFileSync(thumbnailAbsolutePath, Buffer.from(await input.thumbnail.arrayBuffer()));
     input.createdPaths.push(thumbnailAbsolutePath);
+
     result.absolutePath = thumbnailAbsolutePath;
     result.originalRelativePath = path.posix.join("uploads", "thumbnails", "original", originalName);
+    result.previewGenerated = true;
+    result.previewSource = "uploaded";
   } else if (input.fileType === "image") {
     const originalName = `${input.fileId}${input.fileExtension}`;
-    thumbnailAbsolutePath = path.join(THUMBNAIL_ORIGINAL_DIR, originalName);
+    const thumbnailAbsolutePath = path.join(THUMBNAIL_ORIGINAL_DIR, originalName);
     fs.copyFileSync(input.absoluteFilePath, thumbnailAbsolutePath);
     input.createdPaths.push(thumbnailAbsolutePath);
+
     result.absolutePath = thumbnailAbsolutePath;
     result.originalRelativePath = path.posix.join("uploads", "thumbnails", "original", originalName);
+    result.previewGenerated = true;
+    result.previewSource = "image";
+  } else {
+    const normalizedExtension = input.fileExtension.replace(/^\./, "").toLowerCase();
+
+    if (supportsSourcePreview(normalizedExtension)) {
+      const preview = await extractPreviewFromSource({
+        filePath: input.absoluteFilePath,
+        extension: normalizedExtension,
+        fileName: input.fileId,
+      });
+
+      if (preview.generated) {
+        result.absolutePath = preview.absolutePath;
+        result.originalRelativePath = preview.relativePath;
+        result.previewGenerated = true;
+        result.previewSource = "source";
+        input.createdPaths.push(preview.absolutePath);
+      } else {
+        result.previewWarning = preview.warning;
+      }
+    }
   }
 
-  if (result.absolutePath) {
+  if (!result.absolutePath) {
+    return result;
+  }
+
+  try {
     const generated = await generateThumbnails(result.absolutePath, input.fileId);
     result.thumbnailLarge = generated.large;
     result.thumbnailMedium = generated.medium;
     result.thumbnailSmall = generated.small;
+
     input.createdPaths.push(
       path.join(process.cwd(), generated.large),
       path.join(process.cwd(), generated.medium),
       path.join(process.cwd(), generated.small)
     );
+  } catch (error) {
+    console.error("Thumbnail generation warning:", error);
+    result.previewGenerated = false;
+    result.previewWarning =
+      result.previewWarning || "文件已上传，但自动缩略图生成失败，请稍后补传预览图。";
+    result.previewSource = result.previewSource === "none" ? "none" : result.previewSource;
   }
 
   return result;
@@ -302,13 +394,13 @@ async function buildVisualMetadata(input: {
     heightPx: heightFromForm ?? analyzed.height,
     aspectRatio: isAspectRatio(input.aspectRatioStr)
       ? input.aspectRatioStr
-      : inferAspectRatio(widthFromForm ?? analyzed.width, heightFromForm ?? analyzed.height) || analyzed.aspectRatio,
+      : inferAspectRatio(widthFromForm ?? analyzed.width, heightFromForm ?? analyzed.height) ||
+        analyzed.aspectRatio,
     orientation: isOrientation(input.orientationStr)
       ? input.orientationStr
-      : inferOrientation(widthFromForm ?? analyzed.width, heightFromForm ?? analyzed.height) || analyzed.orientation,
-    colorTheme: isColorTheme(input.colorThemeStr)
-      ? input.colorThemeStr
-      : analyzed.colorTheme,
+      : inferOrientation(widthFromForm ?? analyzed.width, heightFromForm ?? analyzed.height) ||
+        analyzed.orientation,
+    colorTheme: isColorTheme(input.colorThemeStr) ? input.colorThemeStr : analyzed.colorTheme,
     primaryColor: analyzed.primaryColor,
   };
 }
@@ -355,7 +447,10 @@ function attachTags(db: ReturnType<typeof getDb>, assetId: number, tagsStr: stri
       | undefined;
 
     if (tag) {
-      db.prepare("INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)").run(assetId, tag.id);
+      db.prepare("INSERT OR IGNORE INTO asset_tags (asset_id, tag_id) VALUES (?, ?)").run(
+        assetId,
+        tag.id
+      );
     }
   }
 }

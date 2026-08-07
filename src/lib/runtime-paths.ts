@@ -5,6 +5,7 @@ export const DATA_DIR = path.join(process.cwd(), "data");
 export const DB_PATH = path.join(DATA_DIR, "assets.db");
 export const UPLOADS_DIR = path.join(process.cwd(), "uploads");
 export const UPLOAD_ASSETS_DIR = path.join(UPLOADS_DIR, "assets");
+export const LOGO_DIR = path.join(UPLOADS_DIR, "logo");
 export const UPLOAD_THUMBNAILS_DIR = path.join(UPLOADS_DIR, "thumbnails");
 export const THUMBNAIL_ORIGINAL_DIR = path.join(UPLOAD_THUMBNAILS_DIR, "original");
 export const THUMBNAIL_LARGE_DIR = path.join(UPLOAD_THUMBNAILS_DIR, "large");
@@ -18,6 +19,7 @@ export function ensureRuntimeDirs() {
     DATA_DIR,
     UPLOADS_DIR,
     UPLOAD_ASSETS_DIR,
+    LOGO_DIR,
     UPLOAD_THUMBNAILS_DIR,
     THUMBNAIL_ORIGINAL_DIR,
     THUMBNAIL_LARGE_DIR,

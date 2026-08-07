@@ -6,8 +6,9 @@ import { getDb } from "@/lib/db";
 export async function POST(req: NextRequest) {
   try {
     const { username, password } = await req.json();
+
     if (!username || !password) {
-      return NextResponse.json({ error: "用户名和密码不能为空" }, { status: 400 });
+      return NextResponse.json({ error: "用户名和密码不能为空。" }, { status: 400 });
     }
 
     const db = getDb();
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
       | undefined;
 
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-      return NextResponse.json({ error: "用户名或密码错误" }, { status: 401 });
+      return NextResponse.json({ error: "用户名或密码错误。" }, { status: 401 });
     }
 
     const token = await signToken({
@@ -40,6 +41,6 @@ export async function POST(req: NextRequest) {
 
     return response;
   } catch {
-    return NextResponse.json({ error: "登录失败" }, { status: 500 });
+    return NextResponse.json({ error: "登录失败。" }, { status: 500 });
   }
 }
