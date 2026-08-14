@@ -11,7 +11,7 @@ if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 call :log Autostart start begin.
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "try { $r = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8000' -TimeoutSec 5; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }"
+  "try { $r = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:9000' -TimeoutSec 5; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }"
 if not errorlevel 1 (
   call :log App already healthy. Skip start.
   exit /b 0
@@ -19,7 +19,7 @@ if not errorlevel 1 (
 
 call :log Stopping stale next start processes.
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*UICloud*' -and $_.CommandLine -like '*next*' -and $_.CommandLine -like '*start*' -and $_.CommandLine -like '*8000*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >> "%LOG_FILE%" 2>&1
+  "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -like '*UICloud*' -and $_.CommandLine -like '*next*' -and $_.CommandLine -like '*start*' -and $_.CommandLine -like '*9000*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >> "%LOG_FILE%" 2>&1
 
 if not exist ".next\BUILD_ID" (
   call :log Missing production build. Running npm run build.

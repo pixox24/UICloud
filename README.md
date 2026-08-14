@@ -6,7 +6,7 @@
 
 1. 安装 [Node.js 20+](https://nodejs.org/)。
 2. 双击运行 `start.bat`，自动安装依赖、初始化数据库、创建目录并启动项目。
-3. 浏览器打开 `http://localhost:8000`，确认本机可访问。
+3. 浏览器打开 `http://localhost:9000`，确认本机可访问。
 4. 需要开机自动运行、静默后台启动和自动配置防火墙时，以管理员身份运行 `setup-startup.bat`。
 5. 如需手动静默启动，双击 `start-hidden.vbs`。
 
@@ -30,13 +30,13 @@ ipconfig
 团队成员在浏览器输入：
 
 ```text
-http://192.168.1.25:8000
+http://192.168.1.25:9000
 ```
 
 如果其他电脑无法访问，请检查：
 
 - 两台电脑是否在同一局域网
-- Windows 防火墙是否放行 `8000` 端口
+- Windows 防火墙是否放行 `9000` 端口
 - 当前电脑是否已经启动项目
 
 ## 常用命令
@@ -60,17 +60,17 @@ npm run dev:lan
 当前推荐方案是 `Windows 任务计划程序 + VBS 隐藏启动`。
 
 - `start-next-hidden.vbs`
-  直接隐藏启动 `node + next start --hostname 0.0.0.0 --port 8000`
+  直接隐藏启动 `node + next start --hostname 0.0.0.0 --port 9000`
 - `start-next-now.vbs`
-  立即隐藏启动 `node + next start --hostname 0.0.0.0 --port 8000`，供看门狗自动恢复使用
+  立即隐藏启动 `node + next start --hostname 0.0.0.0 --port 9000`，供看门狗自动恢复使用
 - `start-hidden.vbs`
   手动静默后台启动入口，双击即可后台拉起服务
 - `watchdog.ps1`
-  每次巡检时检查 `http://localhost:8000`，异常时自动恢复
+  每次巡检时检查 `http://localhost:9000`，异常时自动恢复
 - `watchdog-launcher.js`
   通过 `wscript.exe` 隐藏调用 `watchdog.ps1`，避免计划任务直接拉起 PowerShell 窗口
 - `setup-firewall.bat`
-  负责添加 `8000` 端口的 Windows 防火墙入站规则
+  负责添加 `9000` 端口的 Windows 防火墙入站规则
 - `setup-startup.bat`
   负责创建 Windows 登录后自动执行的隐藏计划任务、5 分钟巡检任务，并调用防火墙配置
 
@@ -86,8 +86,8 @@ setup-startup.bat
 - 配置完成后，Windows 登录约 180 秒后会静默后台启动项目
 - 如果服务中途异常退出，看门狗会每 5 分钟巡检一次并自动尝试恢复
 - 不会再弹出黑色命令行窗口占用任务栏
-- 会自动添加局域网访问 `8000` 端口的防火墙规则
-- 默认访问地址是 `http://localhost:8000`
+- 会自动添加局域网访问 `9000` 端口的防火墙规则
+- 默认访问地址是 `http://localhost:9000`
 
 看门狗日志位置：
 

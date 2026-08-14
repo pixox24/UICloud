@@ -2,13 +2,32 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Layers, LogOut, Shield, Workflow } from "lucide-react";
+import {
+  Sparkles,
+  Image as ImageIcon,
+  Wand2,
+  History,
+  Layers,
+  ChevronLeft,
+  ChevronRight,
+  Zap,
+  Shield,
+  LogOut,
+} from "lucide-react";
 import type { User } from "@/types";
+import type { GenerationMode } from "@/types/ai-studio";
 
 interface SideNavProps {
   user: User | null;
-  activePage?: "library" | "projects";
+  activeItem?: string;
+  currentMode?: GenerationMode;
+  onSelectMode?: (mode: GenerationMode) => void;
+  historyCount?: number;
+  onOpenHistory?: () => void;
+  onOpenTemplates?: () => void;
 }
+
+const COLLAPSE_KEY = "uicloud:sidebar-collapsed";
 
 const AVATAR_THEMES = [
   {
@@ -38,28 +57,11 @@ const AVATAR_THEMES = [
   },
 ] as const;
 
-const NAV_ITEMS = [
-  {
-    id: "library" as const,
-    label: "UI 库",
-    href: "/",
-    icon: Layers,
-  },
-  {
-    id: "projects" as const,
-    label: "项目历程",
-    href: "/projects",
-    icon: Workflow,
-  },
-];
-
 function hashSeed(value: string) {
   let hash = 0;
-
   for (const char of value) {
     hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   }
-
   return hash;
 }
 
@@ -67,16 +69,42 @@ function getAvatarTheme(seed: string) {
   return AVATAR_THEMES[hashSeed(seed) % AVATAR_THEMES.length];
 }
 
-export default function SideNav({ user, activePage = "library" }: SideNavProps) {
+export default function SideNav({
+  user,
+  activeItem,
+  onSelectMode,
+  historyCount = 0,
+  onOpenHistory,
+  onOpenTemplates,
+}: SideNavProps) {
   const router = useRouter();
+  const [collapsed, setCollapsed] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const avatarRef = useRef<HTMLButtonElement>(null);
 
-  /* close popover on outside click */
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
+    } catch {
+      setCollapsed(false);
+    }
+  }, []);
+
+  const toggleCollapse = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (!popoverOpen) return;
-
     const handleClick = (e: MouseEvent) => {
       if (
         popoverRef.current &&
@@ -86,7 +114,6 @@ export default function SideNav({ user, activePage = "library" }: SideNavProps) 
         setPopoverOpen(false);
       }
     };
-
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [popoverOpen]);
@@ -97,150 +124,328 @@ export default function SideNav({ user, activePage = "library" }: SideNavProps) 
     router.refresh();
   };
 
-  const initials = user?.username
-    ? user.username.slice(0, 2).toUpperCase()
-    : "?";
+  const isActive = (id: string) => activeItem === id;
+
+  const selectMode = (mode: GenerationMode) => {
+    if (onSelectMode) {
+      onSelectMode(mode);
+    } else {
+      router.push(`/studio?mode=${mode}`);
+    }
+  };
+
+  const openHistory = () => {
+    if (onOpenHistory) {
+      onOpenHistory();
+    } else {
+      router.push("/studio?tab=history");
+    }
+  };
+
+  const openTemplates = () => {
+    if (onOpenTemplates) {
+      onOpenTemplates();
+    } else {
+      router.push("/studio?tab=templates");
+    }
+  };
+
+  const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : "?";
   const displayName = user?.username ?? "访客";
   const avatarTheme = getAvatarTheme(displayName.trim().toLowerCase() || "guest");
-
   const roleLabel = user?.role === "admin" ? "管理员" : "普通成员";
   const roleColor =
     user?.role === "admin"
-      ? "text-primary bg-primary/10"
-      : "text-muted-foreground bg-secondary";
+      ? "text-[#33fb02] bg-[#18241b] border border-[#33fb02]/40"
+      : "text-gray-400 bg-[#1a1f29] border border-[#2a3344]";
 
   return (
-    <>
-      {/* ── Floating sidebar ── */}
-      <nav className="fixed left-4 top-1/2 z-40 flex -translate-y-1/2 flex-col items-center gap-1 rounded-2xl bg-card/80 px-2 py-3 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.6)] backdrop-blur-xl ring-1 ring-inset ring-white/[0.05]">
-        {/* Nav items */}
-        {NAV_ITEMS.map(({ id, label, href, icon: Icon }) => {
-          const isActive = activePage === id;
-          return (
-            <a
-              key={id}
-              href={href}
-              title={label}
-              className={`group relative flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-200 ${
-                isActive
-                  ? "bg-primary/15 text-primary shadow-[0_0_12px_-2px_hsl(var(--primary)/0.3)]"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-              }`}
-            >
-              <Icon className="h-[18px] w-[18px]" />
-
-              {/* Active indicator dot */}
-              {isActive && (
-                <span className="absolute -right-px top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary opacity-70" />
-              )}
-
-              {/* Tooltip */}
-              <span className="pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded-lg bg-card px-2.5 py-1 text-xs font-medium text-foreground opacity-0 shadow-lg ring-1 ring-inset ring-white/[0.06] transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 -translate-x-1">
-                {label}
-              </span>
-            </a>
-          );
-        })}
-
-        {/* Gradient divider */}
-        <div className="my-1 w-6 overflow-hidden">
-          <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent" />
-        </div>
-
-        {/* Avatar + Popover */}
-        <div className="relative">
-          <button
-            ref={avatarRef}
-            onClick={() => setPopoverOpen((v) => !v)}
-            className={`relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl text-[11px] font-semibold tracking-[0.18em] text-white transition-all duration-200 ${
-              popoverOpen
-                ? "scale-[1.02] ring-2 ring-white/20"
-                : "hover:scale-[1.02]"
-            }`}
-            style={{ boxShadow: `0 12px 24px -16px ${avatarTheme.shadow}` }}
-            title={displayName}
-          >
-            <span
-              className="absolute inset-0"
-              style={{ backgroundImage: avatarTheme.gradient }}
-            />
-            <span className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.24),transparent_48%)]" />
-            <span
-              className="absolute -right-1 -top-1 h-4 w-4 rounded-full border border-white/35"
-              style={{ backgroundColor: avatarTheme.accent }}
-            />
-            <span className="absolute -bottom-2 left-1 h-4 w-4 rounded-full bg-black/10 blur-sm" />
-            <span className="relative">{initials}</span>
-          </button>
-
-          {/* Popover */}
-          {popoverOpen && (
-            <div
-              ref={popoverRef}
-              className="absolute bottom-0 left-full ml-3 w-52 overflow-hidden rounded-xl bg-card shadow-[0_8px_32px_-8px_rgba(0,0,0,0.7)] ring-1 ring-inset ring-white/[0.06]"
-              style={{ animation: "popover-in 0.18s cubic-bezier(0.16,1,0.3,1) forwards" }}
-            >
-              {/* User info */}
-              <div className="px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl text-xs font-semibold tracking-[0.18em] text-white"
-                    style={{
-                      backgroundImage: avatarTheme.gradient,
-                      boxShadow: `0 14px 28px -20px ${avatarTheme.shadow}`,
-                    }}
-                  >
-                    <span className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.24),transparent_48%)]" />
-                    <span
-                      className="absolute -right-1 -top-1 h-4 w-4 rounded-full border border-white/35"
-                      style={{ backgroundColor: avatarTheme.accent }}
-                    />
-                    <span className="relative">{initials}</span>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs tracking-[0.2em] text-muted-foreground">昵称</p>
-                    <p className="truncate text-sm font-medium text-foreground">{displayName}</p>
-                    <span className={`mt-0.5 inline-block rounded-full px-2 py-px text-[11px] font-medium ${roleColor}`}>
-                      {roleLabel}
-                    </span>
-                  </div>
-                </div>
+    <aside
+      className={`relative flex flex-col h-full bg-[#101318] border-r border-[#202632] transition-all duration-300 z-30 select-none ${
+        collapsed ? "w-16" : "w-60"
+      }`}
+    >
+      {/* Brand Header */}
+      <div className="flex items-center justify-between px-4 h-16 border-b border-[#202632]">
+        <a
+          href="/"
+          className="flex items-center gap-3 overflow-hidden cursor-pointer group"
+          title="UI 库"
+        >
+          <div className="w-8 h-8 rounded-lg bg-[#19221a] border-2 border-[#33fb02] flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-105">
+            <Zap className="w-4 h-4 text-[#33fb02]" />
+          </div>
+          {!collapsed && (
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-white tracking-wide text-sm group-hover:text-[#33fb02] transition-colors">Omni Flash</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-[#1b271d] text-[#33fb02] rounded font-bold border border-[#33fb02]/40">PRO</span>
               </div>
-
-              {/* Divider */}
-              <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent" />
-
-              {/* Actions */}
-              <div className="p-1.5">
-                {user?.role === "admin" && (
-                  <a
-                    href="/admin/upload"
-                    className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                    onClick={() => setPopoverOpen(false)}
-                  >
-                    <Shield className="h-4 w-4" />
-                    管理后台
-                  </a>
-                )}
-                <button
-                  onClick={handleLogout}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                >
-                  <LogOut className="h-4 w-4" />
-                  退出登录
-                </button>
-              </div>
+              <span className="text-[11px] text-gray-400">AI 视觉工坊</span>
             </div>
           )}
+        </a>
+
+        <button
+          onClick={toggleCollapse}
+          className="w-7 h-7 rounded-md bg-[#161a22] text-gray-400 hover:text-white hover:bg-[#222834] active:scale-95 flex items-center justify-center transition-all shrink-0"
+          title={collapsed ? "展开侧边栏" : "收起侧边栏"}
+        >
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {/* Navigation list */}
+      <div className="flex-1 overflow-y-auto py-4 px-2 space-y-6">
+        {/* UI 库 */}
+        <div>
+          {!collapsed && (
+            <div className="px-2 mb-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+              资源中心
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <a
+              href="/"
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all duration-150 active:scale-[0.98] ${
+                isActive("library")
+                  ? "bg-[#182619] text-[#33fb02] border-2 border-[#33fb02]"
+                  : "text-gray-300 hover:bg-[#181d26] hover:text-white border-2 border-transparent hover:border-[#232b38]"
+              }`}
+              title="UI 库"
+            >
+              <ImageIcon className={`w-4 h-4 shrink-0 transition-transform duration-200 ${isActive("library") ? "text-[#33fb02] scale-110" : "text-gray-400"}`} />
+              {!collapsed && <span>UI 库</span>}
+            </a>
+          </div>
         </div>
-      </nav>
+
+        {/* AI 图像引擎 */}
+        <div>
+          {!collapsed && (
+            <div className="px-2 mb-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+              AI 图像引擎
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <button
+              type="button"
+              onClick={() => selectMode("text-to-image")}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all duration-150 active:scale-[0.98] ${
+                isActive("text-to-image")
+                  ? "bg-[#182619] text-[#33fb02] border-2 border-[#33fb02]"
+                  : "text-gray-300 hover:bg-[#181d26] hover:text-white border-2 border-transparent hover:border-[#232b38]"
+              }`}
+              title="文字生成图片"
+            >
+              <Sparkles className={`w-4 h-4 shrink-0 transition-transform duration-200 ${isActive("text-to-image") ? "text-[#33fb02] scale-110" : "text-gray-400"}`} />
+              {!collapsed && <span>文字生成图片</span>}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => selectMode("image-edit")}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all duration-150 active:scale-[0.98] ${
+                isActive("image-edit")
+                  ? "bg-[#182619] text-[#33fb02] border-2 border-[#33fb02]"
+                  : "text-gray-300 hover:bg-[#181d26] hover:text-white border-2 border-transparent hover:border-[#232b38]"
+              }`}
+              title="图片生成图片 / 编辑"
+            >
+              <Wand2 className={`w-4 h-4 shrink-0 transition-transform duration-200 ${isActive("image-edit") ? "text-[#33fb02] scale-110" : "text-gray-400"}`} />
+              {!collapsed && <span>图片编辑 / 图生图</span>}
+            </button>
+          </div>
+        </div>
+
+        {/* 资产与灵感 */}
+        <div>
+          {!collapsed && (
+            <div className="px-2 mb-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+              资产与灵感
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <button
+              type="button"
+              onClick={openHistory}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-all duration-150 active:scale-[0.98] ${
+                isActive("history")
+                  ? "bg-[#182619] text-[#33fb02] border-2 border-[#33fb02]"
+                  : "text-gray-300 hover:bg-[#181d26] hover:text-white border-2 border-transparent hover:border-[#232b38]"
+              }`}
+              title="我的创作历史"
+            >
+              <div className="flex items-center gap-3 overflow-hidden">
+                <History className={`w-4 h-4 shrink-0 transition-transform duration-200 ${isActive("history") ? "text-[#33fb02] scale-110" : "text-gray-400"}`} />
+                {!collapsed && <span>我的创作历史</span>}
+              </div>
+              {!collapsed && historyCount > 0 && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#202733] text-gray-300 font-mono font-medium">
+                  {historyCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={openTemplates}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all duration-150 active:scale-[0.98] ${
+                isActive("templates")
+                  ? "bg-[#182619] text-[#33fb02] border-2 border-[#33fb02]"
+                  : "text-gray-300 hover:bg-[#181d26] hover:text-white border-2 border-transparent hover:border-[#232b38]"
+              }`}
+              title="灵感模板库"
+            >
+              <Layers className={`w-4 h-4 shrink-0 transition-transform duration-200 ${isActive("templates") ? "text-[#33fb02] scale-110" : "text-gray-400"}`} />
+              {!collapsed && <span>灵感预设模板</span>}
+            </button>
+          </div>
+        </div>
+
+        {/* 管理后台 */}
+        {user?.role === "admin" && (
+          <div>
+            <a
+              href="/admin/upload"
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all duration-150 active:scale-[0.98] ${
+                isActive("admin")
+                  ? "bg-[#182619] text-[#33fb02] border-2 border-[#33fb02]"
+                  : "text-gray-300 hover:bg-[#181d26] hover:text-white border-2 border-transparent hover:border-[#232b38]"
+              }`}
+              title="管理后台"
+            >
+              <Shield className={`w-4 h-4 shrink-0 transition-transform duration-200 ${isActive("admin") ? "text-[#33fb02] scale-110" : "text-gray-400"}`} />
+              {!collapsed && <span>管理后台</span>}
+            </a>
+          </div>
+        )}
+      </div>
+
+      {/* Footer Info */}
+      <div className="p-3 border-t border-[#202632] bg-[#0d1015]">
+        {!collapsed ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-gray-400">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#33fb02] animate-pulse"></span>
+                <span>AI 服务在线</span>
+              </span>
+              <span className="text-[#33fb02] font-mono font-medium">999 积分</span>
+            </div>
+
+            {/* User / Actions */}
+            <div className="relative">
+              <button
+                ref={avatarRef}
+                onClick={() => setPopoverOpen((v) => !v)}
+                className="w-full flex items-center gap-2.5 p-2 rounded-lg bg-[#141820] border border-[#232b38] hover:border-[#2d3749] transition-all duration-150 active:scale-[0.98]"
+                title={displayName}
+              >
+                <div
+                  className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg text-[10px] font-semibold tracking-[0.15em] text-white"
+                  style={{ backgroundImage: avatarTheme.gradient, boxShadow: `0 10px 20px -14px ${avatarTheme.shadow}` }}
+                >
+                  <span className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.24),transparent_48%)]" />
+                  <span className="relative">{initials}</span>
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col items-start">
+                  <span className="max-w-full truncate text-xs font-semibold text-gray-200">{displayName}</span>
+                  <span className={`mt-0.5 inline-block rounded-full px-1.5 py-px text-[10px] font-medium ${roleColor}`}>
+                    {roleLabel}
+                  </span>
+                </div>
+                <ChevronRight className="w-3.5 h-3.5 text-gray-500" />
+              </button>
+
+              {popoverOpen && (
+                <div
+                  ref={popoverRef}
+                  className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl bg-[#141820] shadow-2xl ring-1 ring-inset ring-white/[0.06]"
+                  style={{ animation: "popover-in 0.18s cubic-bezier(0.16,1,0.3,1) forwards" }}
+                >
+                  <div className="p-1.5">
+                    {user?.role === "admin" && (
+                      <a
+                        href="/admin/upload"
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-[#1c222c] hover:text-white"
+                        onClick={() => setPopoverOpen(false)}
+                      >
+                        <Shield className="h-3.5 w-3.5" />
+                        管理后台
+                      </a>
+                    )}
+                    <button
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-red-950/30 hover:text-red-400"
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      退出登录
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="relative flex justify-center">
+            <button
+              ref={avatarRef}
+              onClick={() => setPopoverOpen((v) => !v)}
+              className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg text-[10px] font-semibold tracking-[0.15em] text-white transition-transform hover:scale-105"
+              style={{ backgroundImage: avatarTheme.gradient, boxShadow: `0 12px 24px -16px ${avatarTheme.shadow}` }}
+              title={displayName}
+            >
+              <span className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.24),transparent_48%)]" />
+              <span className="relative">{initials}</span>
+            </button>
+
+            {popoverOpen && (
+              <div
+                ref={popoverRef}
+                className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl bg-[#141820] shadow-2xl ring-1 ring-inset ring-white/[0.06]"
+                style={{ animation: "popover-in 0.18s cubic-bezier(0.16,1,0.3,1) forwards" }}
+              >
+                <div className="px-3 py-2.5">
+                  <p className="text-[11px] font-semibold text-gray-200">{displayName}</p>
+                  <p className={`mt-0.5 inline-block rounded-full px-1.5 py-px text-[10px] font-medium ${roleColor}`}>
+                    {roleLabel}
+                  </p>
+                </div>
+                <div className="h-px bg-gradient-to-r from-transparent via-gray-700 to-transparent" />
+                <div className="p-1.5">
+                  {user?.role === "admin" && (
+                    <a
+                      href="/admin/upload"
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-[#1c222c] hover:text-white"
+                      onClick={() => setPopoverOpen(false)}
+                    >
+                      <Shield className="h-3.5 w-3.5" />
+                      管理后台
+                    </a>
+                  )}
+                  <button
+                    onClick={handleLogout}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-red-950/30 hover:text-red-400"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    退出登录
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <style>{`
         @keyframes popover-in {
-          from { opacity: 0; transform: translateX(-6px) scale(0.97); }
-          to   { opacity: 1; transform: translateX(0) scale(1); }
+          from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
         }
       `}</style>
-    </>
+    </aside>
   );
 }

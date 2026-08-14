@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 8000",
-    "dev:lan": "next dev --hostname 0.0.0.0 --port 8000",
+    "dev": "next dev --port 9000",
+    "dev:lan": "next dev --hostname 0.0.0.0 --port 9000",
     "build": "next build",
-    "start": "next start --port 8000",
-    "start:lan": "next start --hostname 0.0.0.0 --port 8000",
+    "start": "next start --port 9000",
+    "start:lan": "next start --hostname 0.0.0.0 --port 9000",
     "db:init": "tsx src/lib/init-db.ts",
     "user:add": "tsx src/lib/add-user.ts"
   },

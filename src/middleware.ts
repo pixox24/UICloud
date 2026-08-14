@@ -8,6 +8,7 @@ const ADMIN_API_METHOD_PATHS = [
   { prefix: "/api/categories", methods: ["POST", "PUT", "DELETE"] },
   { prefix: "/api/menus", methods: ["POST", "PUT", "DELETE"] },
   { prefix: "/api/settings", methods: ["POST", "PUT", "DELETE"] },
+  { prefix: "/api/ai-provider", methods: ["POST"] },
 ];
 
 export async function middleware(request: NextRequest) {

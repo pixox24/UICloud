@@ -309,9 +309,13 @@ function BrowsePageContent() {
   const favoritesButtonLabel = showFavorites ? "显示全部资源" : "只看收藏";
 
   return (
-    <div className="min-h-screen">
-      <Header />
-      <SideNav user={user} activePage="library" />
+    <div className="min-h-screen md:flex">
+      <div className="sticky top-0 h-screen shrink-0 hidden md:block">
+        <SideNav user={user} activeItem="library" />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <Header />
 
       <main className="mx-auto w-full max-w-[1680px] space-y-5 px-3 py-4 sm:px-4 lg:px-5">
         <div className="flex items-center justify-end gap-2">
@@ -579,9 +583,10 @@ function BrowsePageContent() {
         )}
       </main>
 
-      {selectedAsset ? (
-        <AssetDetailModal asset={selectedAsset} onClose={() => setSelectedAsset(null)} />
-      ) : null}
+        {selectedAsset ? (
+          <AssetDetailModal asset={selectedAsset} onClose={() => setSelectedAsset(null)} />
+        ) : null}
+      </div>
     </div>
   );
 }

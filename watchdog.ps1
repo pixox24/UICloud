@@ -25,7 +25,7 @@ function Write-WatchdogLog {
 
 function Test-AppHealthy {
   try {
-    $response = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:8000" -TimeoutSec 5
+    $response = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:9000" -TimeoutSec 5
     return $response.StatusCode -eq 200
   } catch {
     return $false
@@ -34,7 +34,7 @@ function Test-AppHealthy {
 
 function Get-NextProcess {
   Get-CimInstance Win32_Process | Where-Object {
-    $_.Name -eq "node.exe" -and $_.CommandLine -like "*next*" -and $_.CommandLine -like "*start*" -and $_.CommandLine -like "*8000*"
+    $_.Name -eq "node.exe" -and $_.CommandLine -like "*next*" -and $_.CommandLine -like "*start*" -and $_.CommandLine -like "*9000*"
   }
 }
 

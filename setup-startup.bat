@@ -69,7 +69,7 @@ echo Startup configuration completed successfully.
 echo The app will auto-start silently about 180 seconds after Windows login.
 echo Startup now has three paths: Task Scheduler, Startup folder, and HKCU Run.
 echo Watchdog will check the app every 5 minutes and auto-restart it if needed.
-echo Access URL after startup: http://localhost:8000
+echo Access URL after startup: http://localhost:9000
 goto :eof
 
 :error

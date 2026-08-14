@@ -155,7 +155,7 @@ export default function ProjectsPage() {
   }, []);
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden" style={{ background: "#060912" }}>
+    <div className="relative min-h-screen overflow-x-hidden md:flex" style={{ background: "#060912" }}>
       <StarfieldCanvas />
 
       {/* Nebula blobs */}
@@ -165,10 +165,12 @@ export default function ProjectsPage() {
         <div className="absolute left-1/3 top-0 h-[300px] w-[600px] rounded-full bg-[hsl(200_60%_25%/0.04)] blur-[140px]" />
       </div>
 
-      <SideNav user={user} activePage="projects" />
+      <div className="sticky top-0 h-screen shrink-0 z-20 hidden md:block">
+        <SideNav user={user} activeItem="projects" />
+      </div>
 
       {/* Content */}
-      <div className="relative z-10">
+      <div className="relative z-10 min-w-0 flex-1">
         <HeroSection />
         <TimelineSection milestones={MILESTONES} />
         <FooterStats milestones={MILESTONES} />

@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-set "APP_PORT=8000"
+set "APP_PORT=9000"
 
 echo ========================================
 echo UI Library Windows Startup

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Upload, List, FolderTree, ArrowLeft, Users, ClipboardList, MenuSquare, Settings } from "lucide-react";
+import { Upload, List, FolderTree, ArrowLeft, Users, ClipboardList, MenuSquare, Settings, Cable } from "lucide-react";
 
 const links = [
   { href: "/admin/upload", label: "上传资产", icon: Upload },
@@ -11,6 +11,7 @@ const links = [
   { href: "/admin/users", label: "用户管理", icon: Users },
   { href: "/admin/audit", label: "操作日志", icon: ClipboardList },
   { href: "/admin/settings", label: "系统设置", icon: Settings },
+  { href: "/admin/connections", label: "系统连接配置", icon: Cable },
 ];
 
 export default function AdminNav() {
