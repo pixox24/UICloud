@@ -3,15 +3,34 @@ import { generateWithProvider, getProviderConfig } from "@/lib/ai-provider";
 
 export const runtime = "nodejs";
 
+const VALID_MODES = new Set(["image-edit", "text-to-image", "reference-image"]);
+const SUPPORTED_RESOLUTIONS = new Set(["512px", "1K", "2K"]);
+
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   try {
     const body = await req.json();
     const { prompt, negativePrompt, mode, model, aspectRatio, resolution, referenceImage } = body || {};
 
+    if (typeof mode !== "string" || !VALID_MODES.has(mode)) {
+      return NextResponse.json({ error: "生成模式无效" }, { status: 400 });
+    }
+
+    if (resolution !== undefined && (typeof resolution !== "string" || !SUPPORTED_RESOLUTIONS.has(resolution))) {
+      return NextResponse.json({ error: "当前仅支持 512px、1K 和 2K 分辨率" }, { status: 400 });
+    }
+
     if (!prompt && !referenceImage) {
       return NextResponse.json({ error: "请提供提示词或参考图片" }, { status: 400 });
     }
+
+    if (mode === "image-edit" && !referenceImage) {
+      return NextResponse.json({ error: "图片编辑模式需要参考图片" }, { status: 400 });
+    }
+
+    // The mode is authoritative. A stale or forged reference image must never
+    // turn a text-to-image request into an image edit request.
+    const normalizedReferenceImage = mode === "text-to-image" ? null : referenceImage || null;
 
     const provider = getProviderConfig();
     if (provider && provider.enabled && provider.base_url && provider.api_key) {
@@ -21,7 +40,7 @@ export async function POST(req: NextRequest) {
           negativePrompt,
           aspectRatio,
           resolution,
-          referenceImage,
+          referenceImage: normalizedReferenceImage,
         });
 
         return NextResponse.json({
@@ -42,23 +61,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 未配置模型提供商时的演示模式
-    const simulatedUrl =
-      referenceImage && mode === "image-edit"
-        ? "https://images.unsplash.com/photo-1563089145-599997674d42?w=1000&auto=format&fit=crop&q=85"
-        : `https://images.unsplash.com/photo-${1500000000000 + Math.floor(Math.random() * 50000000)}?w=1000&auto=format&fit=crop&q=85`;
-
-    return NextResponse.json({
-      success: true,
-      imageUrl: simulatedUrl,
-      mode,
-      model,
-      aspectRatio,
-      resolution,
-      durationMs: Date.now() - startTime + 800,
-      simulated: true,
-      message: "未配置 AI 模型提供商，当前为演示模式生成",
-    });
+    return NextResponse.json(
+      { error: "AI 模型未配置或当前未启用，请先在管理后台完成连接配置" },
+      { status: 503 }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { error: err?.message || "图像生成遇到问题，请重试", durationMs: Date.now() - startTime },

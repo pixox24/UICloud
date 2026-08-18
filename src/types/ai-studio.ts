@@ -39,7 +39,6 @@ export interface GenerationParams {
   aspectRatio: AspectRatio;
   resolution: Resolution;
   outputFormat: OutputFormat;
-  enableGoogleSearch: boolean;
   referenceImage?: string | null;
   referenceImageName?: string;
   strength?: number;

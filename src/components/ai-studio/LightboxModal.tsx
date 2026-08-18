@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Download, ZoomIn, ZoomOut, RotateCcw, Maximize } from 'lucide-react';
 
 interface LightboxModalProps {
@@ -10,6 +10,19 @@ interface LightboxModalProps {
 
 export const LightboxModal: React.FC<LightboxModalProps> = ({ imageUrl, onClose }) => {
   const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    if (!imageUrl) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [imageUrl, onClose]);
 
   if (!imageUrl) return null;
 
@@ -27,8 +40,14 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({ imageUrl, onClose 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md animate-fade-in select-none">
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 p-1.5 rounded-xl bg-[#141820]/90 border-2 border-[#2b3546] shadow-2xl z-10">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md animate-fade-in select-none"
+      onClick={onClose}
+    >
+      <div
+        className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 p-1.5 rounded-xl bg-[#141820]/90 border-2 border-[#2b3546] shadow-2xl z-10"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           onClick={handleZoomIn}
@@ -77,6 +96,7 @@ export const LightboxModal: React.FC<LightboxModalProps> = ({ imageUrl, onClose 
           src={imageUrl}
           alt="高清大图查看"
           referrerPolicy="no-referrer"
+          onClick={(e) => e.stopPropagation()}
           style={{ transform: `scale(${scale})`, transition: 'transform 0.15s ease-out' }}
           className="max-w-[90vw] max-h-[85vh] object-contain rounded-lg shadow-2xl"
         />

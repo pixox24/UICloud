@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { RotateCcw, Sparkles, Wand2, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Bookmark, RotateCcw, Sparkles, Wand2, Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
 import SideNav from "@/components/SideNav";
 import { PromptSection } from "@/components/ai-studio/PromptSection";
 import { ReferenceUpload } from "@/components/ai-studio/ReferenceUpload";
@@ -11,13 +11,12 @@ import { PreviewCanvas } from "@/components/ai-studio/PreviewCanvas";
 import { HistoryDrawer } from "@/components/ai-studio/HistoryDrawer";
 import { TemplateModal } from "@/components/ai-studio/TemplateModal";
 import { LightboxModal } from "@/components/ai-studio/LightboxModal";
-import { INITIAL_HISTORY } from "@/lib/ai-studio/templates";
+import { INITIAL_HISTORY, PROMPT_TEMPLATES } from "@/lib/ai-studio/templates";
 import type {
   AIModelId,
   AspectRatio,
   GenerationMode,
   HistoryItem,
-  OutputFormat,
   PromptTemplate,
   Resolution,
 } from "@/types/ai-studio";
@@ -46,17 +45,13 @@ function StudioContent() {
   // Workbench Generation Parameters
   const [mode, setMode] = useState<GenerationMode>(validMode ?? "image-edit");
   const [model, setModel] = useState<AIModelId>("gpt-image-2");
-  const [prompt, setPrompt] = useState(
-    "将这张照片转换为角色手办。在手办后面放一个印有角色形象的包装盒，旁边放一台电脑，屏幕上显示 Blender 建模过程。在包装盒前面放一个圆形塑料底座，角色手办站在上面。如果可能的话，场景设置在室内"
-  );
-  const [negativePrompt, setNegativePrompt] = useState("");
+  const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("1:1");
   const [resolution, setResolution] = useState<Resolution>("1K");
-  const [outputFormat, setOutputFormat] = useState<OutputFormat>("PNG");
-  const [enableGoogleSearch, setEnableGoogleSearch] = useState(false);
-  const [referenceImage, setReferenceImage] = useState<string | null>(
-    "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&auto=format&fit=crop&q=80"
-  );
+  const [referenceImage, setReferenceImage] = useState<string | null>(null);
+  const [providerStatus, setProviderStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [generationStatus, setGenerationStatus] = useState<"idle" | "generating" | "success" | "failed">("idle");
+  const [generationError, setGenerationError] = useState("");
 
   // Results & History
   const [history, setHistory] = useState<HistoryItem[]>(() => {
@@ -71,20 +66,21 @@ function StudioContent() {
     return INITIAL_HISTORY;
   });
 
-  const [currentResult, setCurrentResult] = useState<HistoryItem | null>(() => {
-    return INITIAL_HISTORY[0] || null;
-  });
+  const [currentResult, setCurrentResult] = useState<HistoryItem | null>(null);
 
   // Action status states
   const [isGenerating, setIsGenerating] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
-  const [isUpscaling, setIsUpscaling] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
 
   // Modals
   const [historyOpen, setHistoryOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [saveTitle, setSaveTitle] = useState("");
+  const [saveTags, setSaveTags] = useState("");
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -101,8 +97,9 @@ function StudioContent() {
         if (data.model) {
           setModel(data.model);
         }
+        setProviderStatus(data.configured && data.enabled ? "ready" : "unavailable");
       })
-      .catch(() => undefined);
+      .catch(() => setProviderStatus("unavailable"));
   }, []);
 
   useEffect(() => {
@@ -112,6 +109,19 @@ function StudioContent() {
     const modeParam = searchParams.get("mode");
     if (modeParam === "image-edit" || modeParam === "text-to-image" || modeParam === "reference-image") {
       setMode(modeParam);
+    }
+
+    const templateId = searchParams.get("template");
+    if (templateId) {
+      const found = PROMPT_TEMPLATES.find((t) => t.id === templateId);
+      if (found) {
+        setPrompt(found.prompt);
+        setMode(found.defaultMode);
+        setAspectRatio(found.aspectRatio);
+        if (found.sampleOriginalImage) {
+          setReferenceImage(found.sampleOriginalImage);
+        }
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -125,6 +135,19 @@ function StudioContent() {
     }
   }, [history]);
 
+  useEffect(() => {
+    if (!saveModalOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSaveModalOpen(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [saveModalOpen]);
+
   const showToast = (text: string, type: "success" | "error" | "info" = "success") => {
     setToastMessage({ type, text });
     setTimeout(() => setToastMessage(null), 3000);
@@ -132,10 +155,11 @@ function StudioContent() {
 
   const handleReset = () => {
     setPrompt("");
-    setNegativePrompt("");
     setReferenceImage(null);
     setAspectRatio("1:1");
     setResolution("1K");
+    setGenerationStatus("idle");
+    setGenerationError("");
     showToast("已重置所有生成参数", "info");
   };
 
@@ -162,6 +186,11 @@ function StudioContent() {
   };
 
   const handleGenerate = async () => {
+    if (providerStatus !== "ready") {
+      showToast("AI 模型尚未配置或当前不可用", "error");
+      return;
+    }
+
     if (!prompt.trim() && !referenceImage) {
       showToast("请输入提示词或上传参考图片", "error");
       return;
@@ -173,23 +202,24 @@ function StudioContent() {
     }
 
     setIsGenerating(true);
+    setGenerationStatus("generating");
+    setGenerationError("");
     const startTime = Date.now();
 
     try {
+      const requestBody = {
+        prompt,
+        mode,
+        model,
+        aspectRatio,
+        resolution,
+        ...(mode !== "text-to-image" && referenceImage ? { referenceImage } : {}),
+      };
+
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt,
-          negativePrompt,
-          mode,
-          model,
-          aspectRatio,
-          resolution,
-          referenceImage,
-          enableGoogleSearch,
-          outputFormat,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
@@ -201,12 +231,11 @@ function StudioContent() {
       const newItem: HistoryItem = {
         id: "gen-" + Date.now(),
         prompt: prompt || "图片智能编辑重绘",
-        negativePrompt,
         mode,
         model,
         aspectRatio,
         resolution,
-        outputFormat,
+        outputFormat: "PNG",
         originalImageUrl:
           (mode === "image-edit" || mode === "reference-image") && referenceImage ? referenceImage : undefined,
         resultImageUrl: data.imageUrl,
@@ -218,46 +247,15 @@ function StudioContent() {
 
       setCurrentResult(newItem);
       setHistory((prev) => [newItem, ...prev]);
-      if (data.simulated) {
-        showToast(data.message || "当前为演示模式生成", "info");
-      } else {
-        showToast("图像生成成功！");
-      }
+      setGenerationStatus("success");
+      showToast("图像生成成功！");
     } catch (err: any) {
       console.error(err);
+      setGenerationStatus("failed");
+      setGenerationError(err.message || "生成遇到错误，请检查网络或重试");
       showToast(err.message || "生成遇到错误，请检查网络或重试", "error");
     } finally {
       setIsGenerating(false);
-    }
-  };
-
-  const handleUpscale = async () => {
-    if (!currentResult?.resultImageUrl) return;
-    setIsUpscaling(true);
-    try {
-      const res = await fetch("/api/upscale", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageUrl: currentResult.resultImageUrl,
-          targetResolution: resolution === "4K" ? "4K Ultra" : "4K",
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        const updated = {
-          ...currentResult,
-          resolution: "4K" as Resolution,
-          upscaled: true,
-        };
-        setCurrentResult(updated);
-        setHistory((prev) => prev.map((item) => (item.id === currentResult.id ? updated : item)));
-        showToast("已完成 4K 高清纹理放大重构");
-      }
-    } catch (err) {
-      showToast("放大失败，请重试", "error");
-    } finally {
-      setIsUpscaling(false);
     }
   };
 
@@ -265,11 +263,11 @@ function StudioContent() {
     if (!currentResult?.resultImageUrl) return;
     const a = document.createElement("a");
     a.href = currentResult.resultImageUrl;
-    a.download = `omni-flash-${currentResult.id}.${outputFormat.toLowerCase()}`;
+    a.download = `omni-flash-${currentResult.id}.png`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    showToast(`已下载 ${outputFormat} 格式图片`);
+    showToast("已下载 PNG 图片");
   };
 
   const handleApplyTemplate = (tmpl: PromptTemplate) => {
@@ -282,6 +280,65 @@ function StudioContent() {
       setReferenceImage(tmpl.sampleImage);
     }
     showToast(`已载入模板「${tmpl.title}」`);
+  };
+
+  const openSaveTemplateModal = () => {
+    if (!prompt.trim()) {
+      showToast("请先输入提示词再保存为模板", "error");
+      return;
+    }
+    setSaveTitle("");
+    setSaveTags("");
+    setSaveModalOpen(true);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!saveTitle.trim() || !prompt.trim()) {
+      showToast("模板名称不能为空", "error");
+      return;
+    }
+
+    setIsSavingTemplate(true);
+    try {
+      const tags = saveTags
+        .split(/[,，、]/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+      const sampleImage = currentResult?.resultImageUrl || undefined;
+      const sampleOriginalImage =
+        (mode === "image-edit" || mode === "reference-image") && referenceImage
+          ? referenceImage
+          : undefined;
+
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: saveTitle.trim(),
+          category: mode === "text-to-image" ? "我的模板" : "我的模板",
+          prompt,
+          sampleImage,
+          sampleOriginalImage,
+          defaultMode: mode,
+          aspectRatio,
+          tags,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "保存失败");
+      }
+
+      setSaveModalOpen(false);
+      showToast(`模板「${saveTitle.trim()}」已存入精选模板库`);
+    } catch (err: any) {
+      console.error(err);
+      showToast(err.message || "保存模板失败，请重试", "error");
+    } finally {
+      setIsSavingTemplate(false);
+    }
   };
 
   const handleUseAsReference = (imageUrl: string) => {
@@ -297,7 +354,6 @@ function StudioContent() {
     setModel(item.model);
     setAspectRatio(item.aspectRatio);
     setResolution(item.resolution);
-    setOutputFormat(item.outputFormat);
     if (item.originalImageUrl) {
       setReferenceImage(item.originalImageUrl);
     }
@@ -365,12 +421,6 @@ function StudioContent() {
               onChangeAspectRatio={setAspectRatio}
               resolution={resolution}
               onChangeResolution={setResolution}
-              enableGoogleSearch={enableGoogleSearch}
-              onToggleGoogleSearch={setEnableGoogleSearch}
-              outputFormat={outputFormat}
-              onChangeOutputFormat={setOutputFormat}
-              negativePrompt={negativePrompt}
-              onChangeNegativePrompt={setNegativePrompt}
             />
 
             <PromptSection
@@ -386,7 +436,42 @@ function StudioContent() {
             )}
           </div>
 
-          <div className="p-3.5 border-t border-[#202734] bg-[#12151c] flex items-center gap-2.5">
+          <div className="p-3.5 border-t border-[#202734] bg-[#12151c] space-y-2.5">
+            <div
+              className={`rounded-lg border px-3 py-2 text-[11px] ${
+                providerStatus === "ready"
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-200"
+              }`}
+              role="status"
+              aria-live="polite"
+            >
+              {providerStatus === "loading"
+                ? "正在检查 AI 模型服务..."
+                : providerStatus === "ready"
+                  ? "AI 模型服务已连接"
+                  : "尚未配置可用的 AI 模型，请先在管理后台完成连接配置"}
+            </div>
+            {generationStatus !== "idle" && (
+              <div
+                className={`rounded-lg border px-3 py-2 text-[11px] ${
+                  generationStatus === "failed"
+                    ? "border-red-500/30 bg-red-500/10 text-red-300"
+                    : generationStatus === "success"
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                      : "border-sky-500/30 bg-sky-500/10 text-sky-200"
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                {generationStatus === "generating"
+                  ? "生成中：正在等待模型返回结果..."
+                  : generationStatus === "success"
+                    ? "生成成功：结果已加入创作历史"
+                    : `生成失败：${generationError}`}
+              </div>
+            )}
+            <div className="flex items-center gap-2.5">
             <button
               type="button"
               onClick={handleReset}
@@ -398,8 +483,18 @@ function StudioContent() {
 
             <button
               type="button"
+              onClick={openSaveTemplateModal}
+              disabled={!prompt.trim()}
+              className="p-3 rounded-xl bg-[#181d26] hover:bg-[#222834] text-amber-400 hover:text-amber-300 border border-[#252d3a] hover:border-amber-500/50 transition-colors shrink-0 disabled:opacity-40 disabled:pointer-events-none"
+              title="将当前提示词与结果保存为模板"
+            >
+              <Bookmark className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
               onClick={handleGenerate}
-              disabled={isGenerating}
+              disabled={isGenerating || providerStatus !== "ready"}
               className="flex-1 py-3 px-4 rounded-xl bg-[#33fb02] hover:bg-[#2ee002] active:scale-[0.99] text-black font-extrabold text-xs tracking-wide flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(51,251,2,0.3)] hover:shadow-[0_0_25px_rgba(51,251,2,0.5)] disabled:opacity-60 disabled:pointer-events-none"
             >
               {isGenerating ? (
@@ -414,6 +509,7 @@ function StudioContent() {
                 </>
               )}
             </button>
+            </div>
           </div>
         </div>
 
@@ -423,8 +519,6 @@ function StudioContent() {
           referenceImage={referenceImage}
           isGenerating={isGenerating}
           onDownload={handleDownload}
-          onUpscale={handleUpscale}
-          isUpscaling={isUpscaling}
           onRegenerate={handleGenerate}
           onUseAsReference={handleUseAsReference}
           onOpenHistory={() => setHistoryOpen(true)}
@@ -443,6 +537,104 @@ function StudioContent() {
       />
 
       <TemplateModal isOpen={templateOpen} onClose={() => setTemplateOpen(false)} onApplyTemplate={handleApplyTemplate} />
+
+      {/* Save as Template Modal */}
+      {saveModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          onClick={() => setSaveModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md bg-[#11141b] border border-[#232b3a] rounded-2xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#202734] bg-[#0e1117]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#201d12] border border-amber-400/40 flex items-center justify-center">
+                  <Bookmark className="w-4 h-4 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">保存为模板</h3>
+                  <p className="text-xs text-gray-400">存入精选创作模板库，随时复用</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSaveModalOpen(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#1f2633] transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-300 mb-1.5">模板名称 *</label>
+                <input
+                  value={saveTitle}
+                  onChange={(e) => setSaveTitle(e.target.value)}
+                  placeholder="例如：赛博朋克雨夜街道（16:9）"
+                  className="w-full rounded-lg bg-[#0d1017] border border-[#232b38] px-3 py-2.5 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-amber-400/60"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-300 mb-1.5">
+                  标签（用逗号分隔）
+                </label>
+                <input
+                  value={saveTags}
+                  onChange={(e) => setSaveTags(e.target.value)}
+                  placeholder="例如：赛博朋克, 夜景, 霓虹"
+                  className="w-full rounded-lg bg-[#0d1017] border border-[#232b38] px-3 py-2.5 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-amber-400/60"
+                />
+              </div>
+
+              <div className="rounded-lg bg-[#0d1017] border border-[#1c222c] p-3">
+                <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                  将保存的内容
+                </div>
+                <ul className="text-[11px] text-gray-400 space-y-1">
+                  <li>• 当前提示词（{prompt.length} 字）</li>
+                  <li>• 模式：{mode === "image-edit" ? "图片编辑" : mode === "text-to-image" ? "文生图" : "参考图"}</li>
+                  <li>• 比例：{aspectRatio}</li>
+                  {currentResult?.resultImageUrl && <li>• 当前生成结果作为封面</li>}
+                  {referenceImage && <li>• 参考原图</li>}
+                </ul>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setSaveModalOpen(false)}
+                  className="flex-1 py-3 rounded-xl border border-[#232b38] text-sm font-bold text-gray-300 hover:bg-[#181d26] transition-all duration-150 active:scale-[0.98]"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveTemplate}
+                  disabled={isSavingTemplate || !saveTitle.trim()}
+                  className="flex-1 py-3 rounded-xl bg-amber-500/90 hover:bg-amber-500 text-black text-sm font-bold transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+                >
+                  {isSavingTemplate ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      保存中...
+                    </>
+                  ) : (
+                    <>
+                      <Bookmark className="w-4 h-4" />
+                      保存模板
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <LightboxModal imageUrl={lightboxImage} onClose={() => setLightboxImage(null)} />
 

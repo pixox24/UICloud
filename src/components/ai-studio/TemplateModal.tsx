@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Sparkles, Wand2, Check, ArrowRight, Layers, LayoutGrid } from 'lucide-react';
 import { PROMPT_TEMPLATES } from '@/lib/ai-studio/templates';
 import { PromptTemplate } from '@/types/ai-studio';
@@ -18,6 +18,19 @@ export const TemplateModal: React.FC<TemplateModalProps> = ({
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const categories = ['全部', '手办/3D盲盒', '概念艺术', '3D/粘土', '商业产品', '二次元/原画', '图片编辑'];
@@ -27,8 +40,14 @@ export const TemplateModal: React.FC<TemplateModalProps> = ({
     : PROMPT_TEMPLATES.filter((t) => t.category === selectedCategory);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-4xl bg-[#11141b] border border-[#232b3a] rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-4xl bg-[#11141b] border border-[#232b3a] rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#202734] bg-[#0e1117]">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-[#1a261c] border border-[#33fb02]/40 flex items-center justify-center">

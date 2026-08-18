@@ -143,11 +143,7 @@ export default function SideNav({
   };
 
   const openTemplates = () => {
-    if (onOpenTemplates) {
-      onOpenTemplates();
-    } else {
-      router.push("/studio?tab=templates");
-    }
+    router.push("/templates");
   };
 
   const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : "?";
@@ -327,15 +323,7 @@ export default function SideNav({
       {/* Footer Info */}
       <div className="p-3 border-t border-[#202632] bg-[#0d1015]">
         {!collapsed ? (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-[11px] text-gray-400">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#33fb02] animate-pulse"></span>
-                <span>AI 服务在线</span>
-              </span>
-              <span className="text-[#33fb02] font-mono font-medium">999 积分</span>
-            </div>
-
+          <div>
             {/* User / Actions */}
             <div className="relative">
               <button

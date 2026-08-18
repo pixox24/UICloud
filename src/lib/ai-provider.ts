@@ -125,11 +125,11 @@ function extractErrorMessage(data: unknown): string {
   return "";
 }
 
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+async function withTimeout<T>(task: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
-    return await promise;
+    return await task(controller.signal);
   } finally {
     clearTimeout(timer);
   }
@@ -137,7 +137,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 async function postJson(url: string, apiKey: string, body: unknown): Promise<unknown> {
   return withTimeout(
-    (async () => {
+    async (signal) => {
       const res = await fetch(url, {
         method: "POST",
         headers: {
@@ -145,6 +145,7 @@ async function postJson(url: string, apiKey: string, body: unknown): Promise<unk
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
+        signal,
       });
 
       let data: unknown = null;
@@ -159,20 +160,21 @@ async function postJson(url: string, apiKey: string, body: unknown): Promise<unk
       }
 
       return data;
-    })(),
+    },
     REQUEST_TIMEOUT_MS
   );
 }
 
 async function postForm(url: string, apiKey: string, form: FormData): Promise<unknown> {
   return withTimeout(
-    (async () => {
+    async (signal) => {
       const res = await fetch(url, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
         },
         body: form,
+        signal,
       });
 
       let data: unknown = null;
@@ -187,7 +189,7 @@ async function postForm(url: string, apiKey: string, form: FormData): Promise<un
       }
 
       return data;
-    })(),
+    },
     REQUEST_TIMEOUT_MS
   );
 }

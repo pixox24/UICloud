@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import {
   Download,
-  ZoomIn,
   Sparkles,
   RotateCcw,
   Copy,
@@ -15,7 +14,6 @@ import {
   ArrowRightLeft,
   Share2,
   FolderHeart,
-  Loader2,
   Image as ImageIcon
 } from 'lucide-react';
 import { HistoryItem } from '@/types/ai-studio';
@@ -25,8 +23,6 @@ interface PreviewCanvasProps {
   referenceImage: string | null;
   isGenerating: boolean;
   onDownload: () => void;
-  onUpscale: () => void;
-  isUpscaling: boolean;
   onRegenerate: () => void;
   onUseAsReference: (imageUrl: string) => void;
   onOpenHistory: () => void;
@@ -38,8 +34,6 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   referenceImage,
   isGenerating,
   onDownload,
-  onUpscale,
-  isUpscaling,
   onRegenerate,
   onUseAsReference,
   onOpenHistory,
@@ -125,7 +119,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
         </div>
       </div>
 
-      <div className="relative rounded-2xl bg-[#11141b] border-2 border-[#202734] p-3 md:p-4 min-h-[420px] flex items-center justify-center overflow-hidden">
+      <div className="relative rounded-2xl bg-[#11141b] border-2 border-[#202734] p-3 md:p-4 min-h-[420px] flex flex-shrink-0 items-center justify-center overflow-hidden">
         {isGenerating ? (
           <div className="flex flex-col items-center justify-center p-12 text-center space-y-4">
             <div className="relative">
@@ -139,23 +133,23 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
                 AI 正在渲染光影与图像结构...
               </h3>
               <p className="text-xs text-gray-400">
-                基于 Gemini 3.1 图像模型生成高保真画质
+                正在等待已配置的模型提供商返回结果
               </p>
             </div>
           </div>
         ) : afterImage ? (
           isEditMode && beforeImage && viewMode === 'side-by-side' ? (
-            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
               <div className="flex flex-col space-y-2">
                 <div className="flex items-center justify-between px-1">
                   <span className="text-xs font-bold text-gray-400">编辑前 (Before)</span>
                 </div>
-                <div className="relative rounded-xl overflow-hidden bg-black/60 border-2 border-[#222a36] hover:border-gray-500 transition-all aspect-square flex items-center justify-center group">
+                <div className="relative rounded-xl overflow-hidden bg-black/60 border-2 border-[#222a36] hover:border-gray-500 transition-all flex items-center justify-center group">
                   <img
                     src={beforeImage}
                     alt="编辑前"
                     referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
+                    className="block w-full h-auto object-contain"
                   />
                   <button
                     type="button"
@@ -174,12 +168,13 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
                     <span>编辑后 (After)</span>
                   </span>
                 </div>
-                <div className="relative rounded-xl overflow-hidden bg-black/60 border-2 border-[#33fb02] aspect-square flex items-center justify-center group">
+                <div className="relative rounded-xl overflow-hidden bg-black/60 border-2 border-[#33fb02] flex items-center justify-center group">
                   <img
                     src={afterImage}
                     alt="编辑后"
                     referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
+                    className="block w-full h-auto object-contain cursor-zoom-in"
+                    onDoubleClick={() => onOpenLightbox(afterImage)}
                   />
                   <button
                     type="button"
@@ -194,7 +189,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
           ) : isEditMode && beforeImage && viewMode === 'slider' ? (
             <div className="w-full max-w-2xl mx-auto">
               <div
-                className="relative aspect-square rounded-xl overflow-hidden border-2 border-[#2b3544] select-none cursor-ew-resize"
+                className="relative w-full rounded-xl overflow-hidden border-2 border-[#2b3544] select-none cursor-ew-resize bg-black/60"
                 onMouseMove={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
@@ -211,19 +206,19 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
                   src={beforeImage}
                   alt="编辑前"
                   referrerPolicy="no-referrer"
-                  className="absolute inset-0 w-full h-full object-cover"
+                  className="relative z-0 block w-full h-auto object-contain"
                 />
 
                 <div
                   className="absolute inset-0 overflow-hidden"
-                  style={{ width: `${sliderPosition}%` }}
+                  style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
                 >
                   <img
                     src={afterImage}
                     alt="编辑后"
                     referrerPolicy="no-referrer"
-                    className="absolute inset-0 w-full h-full object-cover max-w-none"
-                    style={{ width: '100%', height: '100%' }}
+                    className="absolute inset-0 w-full h-full object-contain cursor-zoom-in"
+                    onDoubleClick={() => onOpenLightbox(afterImage)}
                   />
                 </div>
 
@@ -250,7 +245,8 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
                 src={afterImage}
                 alt="AI 生成图片"
                 referrerPolicy="no-referrer"
-                className="max-h-[560px] w-auto max-w-full rounded-xl object-contain shadow-2xl border-2 border-[#33fb02]"
+                className="max-h-[560px] w-auto max-w-full rounded-xl object-contain shadow-2xl border-2 border-[#33fb02] cursor-zoom-in"
+                onDoubleClick={() => onOpenLightbox(afterImage)}
               />
               <button
                 type="button"
@@ -289,20 +285,6 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
             >
               <Download className="w-4 h-4 text-[#33fb02]" />
               <span>下载图片</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onUpscale}
-              disabled={isUpscaling}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1c222e] hover:bg-[#252d3d] text-xs font-bold text-white border-2 border-[#2d3749] hover:border-[#33fb02] disabled:opacity-50 transition-all duration-150 active:scale-95 shadow-sm"
-            >
-              {isUpscaling ? (
-                <Loader2 className="w-4 h-4 animate-spin text-[#33fb02]" />
-              ) : (
-                <ZoomIn className="w-4 h-4 text-[#33fb02]" />
-              )}
-              <span>{isUpscaling ? '高清超分处理中...' : '高清放大'}</span>
             </button>
 
             <button
@@ -359,11 +341,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
           </li>
           <li className="flex items-start gap-1.5">
             <span className="text-[#33fb02] font-bold">·</span>
-            <span><strong className="text-gray-200">明智选择分辨率：</strong>1K 适合快速草稿，2K 适合高质量成片，4K 适合印刷级最大细节。</span>
-          </li>
-          <li className="flex items-start gap-1.5">
-            <span className="text-[#33fb02] font-bold">·</span>
-            <span><strong className="text-gray-200">使用高清放大：</strong>支持一键 2K / 4K 超分辨率增强与质感重建。</span>
+            <span><strong className="text-gray-200">明智选择分辨率：</strong>512px 适合快速草稿，1K 适合常规创作，2K 适合高质量成片。</span>
           </li>
         </ul>
       </div>

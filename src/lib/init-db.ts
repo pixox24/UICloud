@@ -130,6 +130,20 @@ export function initializeDatabase() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL DEFAULT ''
     );
+
+    CREATE TABLE IF NOT EXISTS templates (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT '我的模板',
+      prompt TEXT NOT NULL,
+      sample_image TEXT,
+      sample_original_image TEXT,
+      default_mode TEXT NOT NULL DEFAULT 'text-to-image',
+      aspect_ratio TEXT NOT NULL DEFAULT '1:1',
+      tags TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by INTEGER
+    );
   `);
 
   ensureAssetColumns(db);
