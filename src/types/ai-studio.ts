@@ -17,7 +17,7 @@ export type AspectRatio =
   | '1:8'
   | '8:1';
 
-export type Resolution = '512px' | '1K' | '2K' | '4K';
+export type Resolution = '512px' | '1K' | '2K';
 
 export type OutputFormat = 'PNG' | 'JPG' | 'WEBP';
 

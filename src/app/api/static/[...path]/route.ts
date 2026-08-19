@@ -27,9 +27,17 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { path: string[] } }
 ) {
-  const requestedPath = path.resolve(UPLOADS_DIR, ...params.path);
+  const segments = Array.isArray(params.path) ? params.path : [];
+  // Generated images contain user-scoped data and must only be served through
+  // /api/generated, which performs ownership checks.
+  if (segments[0]?.toLowerCase() === "generated") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
-  if (!requestedPath.startsWith(path.resolve(UPLOADS_DIR))) {
+  const uploadsRoot = path.resolve(UPLOADS_DIR);
+  const requestedPath = path.resolve(uploadsRoot, ...segments);
+
+  if (!requestedPath.startsWith(`${uploadsRoot}${path.sep}`)) {
     return NextResponse.json({ error: "Invalid path" }, { status: 400 });
   }
 

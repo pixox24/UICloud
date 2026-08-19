@@ -66,7 +66,7 @@ const DEFAULT_RATIOS: Record<string, [number, number]> = {
 
 export function buildImageSize(resolution = "1K", aspectRatio = "1:1"): string {
   const base =
-    { "512px": 512, "1K": 1024, "2K": 2048, "4K": 2048 }[resolution] || 1024;
+    { "512px": 512, "1K": 1024, "2K": 2048 }[resolution] || 1024;
   const ratio = DEFAULT_RATIOS[aspectRatio] || [1, 1];
   const [rw, rh] = ratio;
 

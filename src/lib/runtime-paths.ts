@@ -12,6 +12,7 @@ export const THUMBNAIL_LARGE_DIR = path.join(UPLOAD_THUMBNAILS_DIR, "large");
 export const THUMBNAIL_MEDIUM_DIR = path.join(UPLOAD_THUMBNAILS_DIR, "medium");
 export const THUMBNAIL_SMALL_DIR = path.join(UPLOAD_THUMBNAILS_DIR, "small");
 export const UPLOAD_FILES_DIR = UPLOAD_ASSETS_DIR;
+export const GENERATED_DIR = path.join(UPLOADS_DIR, "generated");
 export const MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024;
 
 export function ensureRuntimeDirs() {
@@ -25,6 +26,7 @@ export function ensureRuntimeDirs() {
     THUMBNAIL_LARGE_DIR,
     THUMBNAIL_MEDIUM_DIR,
     THUMBNAIL_SMALL_DIR,
+    GENERATED_DIR,
   ];
 
   for (let index = 0; index < directories.length; index += 1) {

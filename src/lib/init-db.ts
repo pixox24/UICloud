@@ -144,6 +144,34 @@ export function initializeDatabase() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       created_by INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS generation_jobs (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      prompt TEXT NOT NULL,
+      negative_prompt TEXT,
+      mode TEXT NOT NULL,
+      model TEXT NOT NULL,
+      aspect_ratio TEXT NOT NULL,
+      resolution TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('queued','generating','succeeded','failed','interrupted','cancelled')),
+      error_message TEXT,
+      error_code TEXT,
+      reference_path TEXT,
+      reference_mime TEXT,
+      result_path TEXT,
+      result_mime TEXT,
+      started_at INTEGER,
+      finished_at INTEGER,
+      heartbeat_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      is_favorite INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_generation_jobs_user_created
+      ON generation_jobs(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_generation_jobs_status
+      ON generation_jobs(status, updated_at);
   `);
 
   ensureAssetColumns(db);

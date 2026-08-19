@@ -14,6 +14,7 @@ import {
   ArrowRightLeft,
   Share2,
   FolderHeart,
+  Save,
   Image as ImageIcon
 } from 'lucide-react';
 import { HistoryItem } from '@/types/ai-studio';
@@ -27,6 +28,7 @@ interface PreviewCanvasProps {
   onUseAsReference: (imageUrl: string) => void;
   onOpenHistory: () => void;
   onOpenLightbox: (imageUrl: string) => void;
+  onSaveTemplate: () => void;
 }
 
 export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
@@ -38,6 +40,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   onUseAsReference,
   onOpenHistory,
   onOpenLightbox,
+  onSaveTemplate,
 }) => {
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<'side-by-side' | 'slider' | 'single'>('side-by-side');
@@ -308,6 +311,15 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onSaveTemplate}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/90 hover:bg-amber-500 text-xs font-bold text-black border-2 border-amber-400 transition-all duration-150 active:scale-95"
+              title="将当前提示词与结果保存为模板"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>保存为模版</span>
+            </button>
             <button
               type="button"
               onClick={handleCopyPrompt}

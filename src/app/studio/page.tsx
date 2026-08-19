@@ -11,7 +11,7 @@ import { PreviewCanvas } from "@/components/ai-studio/PreviewCanvas";
 import { HistoryDrawer } from "@/components/ai-studio/HistoryDrawer";
 import { TemplateModal } from "@/components/ai-studio/TemplateModal";
 import { LightboxModal } from "@/components/ai-studio/LightboxModal";
-import { INITIAL_HISTORY, PROMPT_TEMPLATES } from "@/lib/ai-studio/templates";
+import { PROMPT_TEMPLATES } from "@/lib/ai-studio/templates";
 import type {
   AIModelId,
   AspectRatio,
@@ -22,7 +22,8 @@ import type {
 } from "@/types/ai-studio";
 import type { User } from "@/types";
 
-const STORAGE_KEY = "ai_image_workbench_history_v1";
+const STORAGE_KEY_PREFIX = "ai_image_workbench_history_v2";
+const PENDING_JOB_KEY_PREFIX = "ai_image_workbench_pending_job_v1";
 
 export default function StudioPage() {
   return (
@@ -50,21 +51,15 @@ function StudioContent() {
   const [resolution, setResolution] = useState<Resolution>("1K");
   const [referenceImage, setReferenceImage] = useState<string | null>(null);
   const [providerStatus, setProviderStatus] = useState<"loading" | "ready" | "unavailable">("loading");
-  const [generationStatus, setGenerationStatus] = useState<"idle" | "generating" | "success" | "failed">("idle");
+  const [generationStatus, setGenerationStatus] = useState<
+    "idle" | "queued" | "generating" | "success" | "failed" | "content_rejected" | "interrupted" | "cancelled"
+  >("idle");
   const [generationError, setGenerationError] = useState("");
 
   // Results & History
-  const [history, setHistory] = useState<HistoryItem[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return INITIAL_HISTORY;
-  });
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [historyReady, setHistoryReady] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
   const [currentResult, setCurrentResult] = useState<HistoryItem | null>(null);
 
@@ -83,10 +78,62 @@ function StudioContent() {
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((data) => setUser(data.user))
-      .catch(() => undefined);
+    let cancelled = false;
+
+    const loadUserData = async () => {
+      try {
+        const authResponse = await fetch("/api/auth/me");
+        const authData = await authResponse.json();
+        if (cancelled) return;
+        const currentUser = authData.user
+          ? ({
+              id: authData.user.userId,
+              username: authData.user.username,
+              role: authData.user.role,
+            } as User)
+          : null;
+        setUser(currentUser);
+        if (!currentUser) {
+          setHistoryReady(true);
+          return;
+        }
+
+        const historyKey = `${STORAGE_KEY_PREFIX}:${currentUser.id}`;
+        const pendingKey = `${PENDING_JOB_KEY_PREFIX}:${currentUser.id}`;
+        const pendingJobId = localStorage.getItem(pendingKey);
+        if (pendingJobId) setActiveJobId(pendingJobId);
+        let cachedHistory: HistoryItem[] = [];
+        try {
+          const cached = localStorage.getItem(historyKey);
+          if (cached) cachedHistory = JSON.parse(cached);
+        } catch {
+          cachedHistory = [];
+        }
+        if (cachedHistory.length > 0) setHistory(cachedHistory);
+
+        try {
+          const response = await fetch("/api/generate-image");
+          const data = await response.json();
+          if (response.ok && Array.isArray(data.jobs)) {
+            setHistory(data.jobs);
+            localStorage.setItem(historyKey, JSON.stringify(data.jobs));
+          }
+          if (!pendingJobId && response.ok && Array.isArray(data.activeJobs) && data.activeJobs[0]?.id) {
+            setActiveJobId(String(data.activeJobs[0].id));
+          }
+        } catch {
+          // Keep the user-scoped cache as an offline fallback.
+        }
+        setHistoryReady(true);
+      } catch {
+        if (!cancelled) setHistoryReady(true);
+      }
+    };
+
+    void loadUserData();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 拉取后台配置的模型名称（系统连接配置）
@@ -126,14 +173,98 @@ function StudioContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync history to localStorage
+  // Cache only user-scoped metadata. The server remains the source of truth.
   useEffect(() => {
+    if (!user || !historyReady) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}:${user.id}`, JSON.stringify(history));
     } catch (e) {
       console.error("Failed to persist history", e);
     }
-  }, [history]);
+  }, [history, historyReady, user]);
+
+  useEffect(() => {
+    if (!activeJobId) return;
+    let stopped = false;
+
+    const pollJob = async () => {
+      try {
+        const response = await fetch(`/api/generate-image?jobId=${encodeURIComponent(activeJobId)}`);
+        const data = await response.json();
+        if (stopped) return;
+        if (!response.ok || !data.job) {
+          // A reload can reach this endpoint before the original POST has
+          // finished persisting the client-generated task ID. Keep polling;
+          // activeJobs on the next page load provides a second recovery path.
+          return;
+        }
+        const job = data.job;
+
+        if (job.status === "queued") {
+          setIsGenerating(true);
+          setGenerationStatus("queued");
+          return;
+        }
+        if (job.status === "generating") {
+          setIsGenerating(true);
+          setGenerationStatus("generating");
+          return;
+        }
+
+        setActiveJobId(null);
+        if (user) localStorage.removeItem(`${PENDING_JOB_KEY_PREFIX}:${user.id}`);
+
+        if (job.status === "succeeded") {
+          const completed: HistoryItem = {
+            id: job.id,
+            prompt: job.prompt,
+            negativePrompt: job.negativePrompt,
+            mode: job.mode,
+            model: job.model,
+            aspectRatio: job.aspectRatio,
+            resolution: job.resolution,
+            outputFormat: "PNG",
+            originalImageUrl: job.originalImageUrl,
+            resultImageUrl: job.resultImageUrl,
+            timestamp: job.timestamp,
+            durationMs: job.durationMs,
+            isFavorite: job.isFavorite,
+          };
+          setCurrentResult(completed);
+          setHistory((prev) => [completed, ...prev.filter((item) => item.id !== completed.id)]);
+          setIsGenerating(false);
+          setGenerationStatus("success");
+          setGenerationError("");
+          showToast("图像生成成功，结果已保存到创作历史");
+        } else if (job.status === "content_rejected") {
+          setIsGenerating(false);
+          setGenerationStatus("content_rejected");
+          setGenerationError(job.errorMessage || "提示词或参考图未通过内容审核");
+        } else if (job.status === "interrupted") {
+          setIsGenerating(false);
+          setGenerationStatus("interrupted");
+          setGenerationError(job.errorMessage || "服务重启或连接中断，未自动重复生成");
+        } else if (job.status === "cancelled") {
+          setIsGenerating(false);
+          setGenerationStatus("cancelled");
+          setGenerationError("");
+        } else {
+          setIsGenerating(false);
+          setGenerationStatus("failed");
+          setGenerationError(job.errorMessage || "生成失败");
+        }
+      } catch {
+        // Keep polling while the local service is temporarily unavailable.
+      }
+    };
+
+    void pollJob();
+    const timer = window.setInterval(() => void pollJob(), 1500);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [activeJobId, user]);
 
   useEffect(() => {
     if (!saveModalOpen) return;
@@ -202,9 +333,19 @@ function StudioContent() {
     }
 
     setIsGenerating(true);
-    setGenerationStatus("generating");
+    setGenerationStatus("queued");
     setGenerationError("");
-    const startTime = Date.now();
+    const clientJobId = `gen-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const pendingKey = user ? `${PENDING_JOB_KEY_PREFIX}:${user.id}` : null;
+    if (pendingKey) {
+      try {
+        // Persist before the network request so a refresh cannot lose the
+        // short window between task creation and the response.
+        localStorage.setItem(pendingKey, clientJobId);
+      } catch {
+        // The server remains the source of truth if storage is unavailable.
+      }
+    }
 
     try {
       const requestBody = {
@@ -219,7 +360,7 @@ function StudioContent() {
       const response = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({ ...requestBody, jobId: clientJobId }),
       });
 
       const data = await response.json();
@@ -227,35 +368,31 @@ function StudioContent() {
       if (!response.ok) {
         throw new Error(data.error || "生成失败");
       }
-
-      const newItem: HistoryItem = {
-        id: "gen-" + Date.now(),
-        prompt: prompt || "图片智能编辑重绘",
-        mode,
-        model,
-        aspectRatio,
-        resolution,
-        outputFormat: "PNG",
-        originalImageUrl:
-          (mode === "image-edit" || mode === "reference-image") && referenceImage ? referenceImage : undefined,
-        resultImageUrl: data.imageUrl,
-        timestamp: Date.now(),
-        durationMs: data.durationMs || Date.now() - startTime,
-        seed: Math.floor(Math.random() * 999999),
-        isFavorite: false,
-      };
-
-      setCurrentResult(newItem);
-      setHistory((prev) => [newItem, ...prev]);
-      setGenerationStatus("success");
-      showToast("图像生成成功！");
+      const jobId = String(data.jobId || clientJobId);
+      setActiveJobId(jobId);
+      if (user) {
+        try {
+          localStorage.setItem(`${PENDING_JOB_KEY_PREFIX}:${user.id}`, jobId);
+        } catch {
+          // The task remains recoverable from the server's activeJobs list.
+        }
+      }
+      setGenerationStatus("generating");
+      showToast("任务已进入队列，刷新页面也会继续追踪", "info");
     } catch (err: any) {
       console.error(err);
+      setIsGenerating(false);
+      setActiveJobId(null);
+      if (pendingKey) {
+        try {
+          if (localStorage.getItem(pendingKey) === clientJobId) localStorage.removeItem(pendingKey);
+        } catch {
+          // Ignore local cache failures.
+        }
+      }
       setGenerationStatus("failed");
       setGenerationError(err.message || "生成遇到错误，请检查网络或重试");
       showToast(err.message || "生成遇到错误，请检查网络或重试", "error");
-    } finally {
-      setIsGenerating(false);
     }
   };
 
@@ -360,29 +497,54 @@ function StudioContent() {
     showToast("已加载历史创作参数与视图");
   };
 
-  const handleDeleteHistoryItem = (id: string) => {
-    setHistory((prev) => prev.filter((item) => item.id !== id));
-    if (currentResult?.id === id) {
-      const remaining = history.filter((item) => item.id !== id);
-      setCurrentResult(remaining[0] || null);
+  const handleDeleteHistoryItem = async (id: string) => {
+    try {
+      const response = await fetch(`/api/generate-image?jobId=${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("删除失败");
+      setHistory((prev) => prev.filter((item) => item.id !== id));
+      if (currentResult?.id === id) setCurrentResult(null);
+      showToast("已删除该记录", "info");
+    } catch {
+      showToast("删除记录失败，请重试", "error");
     }
-    showToast("已删除该记录", "info");
   };
 
-  const handleToggleFavorite = (id: string) => {
+  const handleToggleFavorite = async (id: string) => {
     setHistory((prev) =>
       prev.map((item) => (item.id === id ? { ...item, isFavorite: !item.isFavorite } : item))
     );
     if (currentResult?.id === id) {
       setCurrentResult((prev) => (prev ? { ...prev, isFavorite: !prev.isFavorite } : null));
     }
+    try {
+      const response = await fetch("/api/generate-image", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "favorite", jobId: id }),
+      });
+      if (!response.ok) throw new Error("更新收藏失败");
+    } catch {
+      setHistory((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, isFavorite: !item.isFavorite } : item))
+      );
+      if (currentResult?.id === id) {
+        setCurrentResult((prev) => (prev ? { ...prev, isFavorite: !prev.isFavorite } : null));
+      }
+      showToast("更新收藏失败，请重试", "error");
+    }
   };
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
     if (confirm("确认清空所有历史创作记录吗？")) {
-      setHistory([]);
-      setCurrentResult(null);
-      showToast("已清空历史记录", "info");
+      try {
+        const response = await fetch("/api/generate-image?all=1", { method: "DELETE" });
+        if (!response.ok) throw new Error("清空失败");
+        setHistory([]);
+        setCurrentResult(null);
+        showToast("已清空历史记录", "info");
+      } catch {
+        showToast("清空历史记录失败，请重试", "error");
+      }
     }
   };
 
@@ -455,7 +617,7 @@ function StudioContent() {
             {generationStatus !== "idle" && (
               <div
                 className={`rounded-lg border px-3 py-2 text-[11px] ${
-                  generationStatus === "failed"
+                  generationStatus === "failed" || generationStatus === "content_rejected" || generationStatus === "interrupted"
                     ? "border-red-500/30 bg-red-500/10 text-red-300"
                     : generationStatus === "success"
                       ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
@@ -464,11 +626,19 @@ function StudioContent() {
                 role="status"
                 aria-live="polite"
               >
-                {generationStatus === "generating"
+                {generationStatus === "queued"
+                  ? "已排队：任务已保存，等待开始生成..."
+                  : generationStatus === "generating"
                   ? "生成中：正在等待模型返回结果..."
                   : generationStatus === "success"
                     ? "生成成功：结果已加入创作历史"
-                    : `生成失败：${generationError}`}
+                    : generationStatus === "interrupted"
+                      ? `生成中断：${generationError}`
+                      : generationStatus === "content_rejected"
+                        ? `内容审核未通过：${generationError}`
+                        : generationStatus === "cancelled"
+                          ? "已取消：任务未继续执行"
+                      : `生成失败：${generationError}`}
               </div>
             )}
             <div className="flex items-center gap-2.5">
@@ -479,16 +649,6 @@ function StudioContent() {
               title="重置全部参数"
             >
               <RotateCcw className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={openSaveTemplateModal}
-              disabled={!prompt.trim()}
-              className="p-3 rounded-xl bg-[#181d26] hover:bg-[#222834] text-amber-400 hover:text-amber-300 border border-[#252d3a] hover:border-amber-500/50 transition-colors shrink-0 disabled:opacity-40 disabled:pointer-events-none"
-              title="将当前提示词与结果保存为模板"
-            >
-              <Bookmark className="w-4 h-4" />
             </button>
 
             <button
@@ -523,6 +683,7 @@ function StudioContent() {
           onUseAsReference={handleUseAsReference}
           onOpenHistory={() => setHistoryOpen(true)}
           onOpenLightbox={(img) => setLightboxImage(img)}
+          onSaveTemplate={openSaveTemplateModal}
         />
       </div>
 

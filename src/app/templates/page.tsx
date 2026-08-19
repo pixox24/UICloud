@@ -173,11 +173,11 @@ function TemplatesContent() {
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
                 {savedFiltered.map((item) => (
                   <div
                     key={item.id}
-                    className="group relative rounded-xl bg-[#141820] hover:bg-[#19202b] border-2 border-[#232b38] hover:border-amber-400/60 transition-all duration-150 p-3 flex flex-col justify-between space-y-3 shadow-lg active:scale-[0.99]"
+                    className="group relative rounded-xl bg-[#141820] hover:bg-[#19202b] border-2 border-[#232b38] hover:border-amber-400/60 transition-all duration-150 p-2.5 flex flex-col justify-between space-y-2.5 shadow-lg active:scale-[0.99]"
                   >
                     <div className="relative rounded-lg overflow-hidden aspect-[4/3] bg-black/60 border border-[#202734]">
                       {item.sampleImage ? (
@@ -269,12 +269,12 @@ function TemplatesContent() {
                 <p className="text-sm text-gray-500">没有匹配的模板。</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
                 {builtIn.map((item) => (
                   <div
                     key={item.id}
                     onClick={() => applyTemplate(item)}
-                    className="group relative rounded-xl bg-[#141820] hover:bg-[#19202b] border-2 border-[#232b38] hover:border-[#33fb02] transition-all duration-150 p-3 flex flex-col justify-between space-y-3 shadow-lg active:scale-[0.99] cursor-pointer"
+                    className="group relative rounded-xl bg-[#141820] hover:bg-[#19202b] border-2 border-[#232b38] hover:border-[#33fb02] transition-all duration-150 p-2.5 flex flex-col justify-between space-y-2.5 shadow-lg active:scale-[0.99] cursor-pointer"
                   >
                     <div className="relative rounded-lg overflow-hidden aspect-[4/3] bg-black/60 border border-[#202734]">
                       <img
